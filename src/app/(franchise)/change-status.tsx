@@ -11,8 +11,8 @@ export default function Screen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  container: { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', padding: 24 },
   icon:      { fontSize: 56 },
-  title:     { fontSize: 22, fontWeight: 'bold', color: '#F1F5F9', marginTop: 16 },
+  title:     { fontSize: 22, fontWeight: 'bold', color: '#0F172A', marginTop: 16 },
   sub:       { fontSize: 14, color: '#64748B', marginTop: 8, textAlign: 'center' },
 });

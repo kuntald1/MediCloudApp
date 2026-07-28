@@ -15,17 +15,18 @@ const ROLE_OPTIONS = [
 const roleLabel = (r: string) => ROLE_OPTIONS.find(o => o.value === r)?.label ?? r;
 const ROLE_COLOR: Record<string, string> = {
   pathologist: '#16a34a', technician: '#2563eb', receptionist: '#8b5cf6',
-  phlebotomist: '#0ea5e9', franchise: '#f97316', lab_admin: '#dc2626',
-  super_admin: '#dc2626', lab_staff: '#0ea5e9',
+  phlebotomist: '#17b9a1', franchise: '#f97316', lab_admin: '#dc2626',
+  super_admin: '#dc2626', lab_staff: '#17b9a1',
 };
 const STAFF_ROLES = ['technician', 'receptionist', 'phlebotomist'];
 
 interface User {
   id: number; email: string; role: string; full_name?: string;
-  phone?: string | null; branch_id?: number | null; franchise_id?: number | null; is_active: boolean;
+  phone?: string | null; branch_id?: number | null; franchise_id?: number | null;
+  department_id?: number | null; is_active: boolean;
 }
 
-const BLANK = { full_name: '', email: '', password: '', role: 'technician', franchise_id: null as number | null, branch_id: null as number | null, phone: '' };
+const BLANK = { full_name: '', email: '', password: '', role: 'technician', franchise_id: null as number | null, branch_id: null as number | null, department_id: null as number | null, phone: '' };
 
 export default function UsersStaff() {
   const [users, setUsers]       = useState<User[]>([]);
@@ -33,6 +34,7 @@ export default function UsersStaff() {
   const [refreshing, setRefreshing] = useState(false);
   const [branches, setBranches] = useState<{id:number;name:string}[]>([]);
   const [franchises, setFranchises] = useState<{id:number;name:string}[]>([]);
+  const [departments, setDepartments] = useState<{id:number;name:string}[]>([]);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -41,17 +43,20 @@ export default function UsersStaff() {
   const [showRolePicker, setShowRolePicker] = useState(false);
   const [showBranchPicker, setShowBranchPicker] = useState(false);
   const [showFranchisePicker, setShowFranchisePicker] = useState(false);
+  const [showDeptPicker, setShowDeptPicker] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [u, b, f] = await Promise.all([
+      const [u, b, f, d] = await Promise.all([
         fetch(`${API_BASE}/api/admin/users`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
         fetch(`${API_BASE}/api/admin/branches`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
         fetch(`${API_BASE}/api/admin/franchises`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
+        fetch(`${API_BASE}/api/catalog/departments`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
       ]);
       setUsers(Array.isArray(u) ? u : u.items ?? []);
       setBranches(Array.isArray(b) ? b : []);
       setFranchises(Array.isArray(f) ? f : []);
+      setDepartments((Array.isArray(d) ? d : []).filter((x: any) => x.is_active !== false));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -62,7 +67,8 @@ export default function UsersStaff() {
   const openAdd  = () => { setForm({ ...BLANK }); setEditingId(null); setShowForm(true); };
   const openEdit = (u: User) => {
     setForm({ full_name: u.full_name ?? '', email: u.email ?? '', password: '', role: u.role,
-      franchise_id: u.franchise_id ?? null, branch_id: u.branch_id ?? null, phone: u.phone ?? '' });
+      franchise_id: u.franchise_id ?? null, branch_id: u.branch_id ?? null,
+      department_id: u.department_id ?? null, phone: u.phone ?? '' });
     setEditingId(u.id); setShowForm(true);
   };
 
@@ -78,7 +84,7 @@ export default function UsersStaff() {
           method: 'PUT', headers: { ...authHeader(), 'Content-Type': 'application/json' },
           body: JSON.stringify({
             full_name: form.full_name.trim(), role: form.role, phone: form.phone || null,
-            franchise_id: form.franchise_id, branch_id: form.branch_id,
+            franchise_id: form.franchise_id, branch_id: form.branch_id, department_id: form.department_id,
           }),
         });
       } else {
@@ -87,7 +93,7 @@ export default function UsersStaff() {
           body: JSON.stringify({
             full_name: form.full_name.trim(), email: form.email.trim(), password: form.password,
             role: form.role, phone: form.phone || null,
-            franchise_id: form.franchise_id, branch_id: form.branch_id,
+            franchise_id: form.franchise_id, branch_id: form.branch_id, department_id: form.department_id,
           }),
         });
       }
@@ -129,6 +135,9 @@ export default function UsersStaff() {
             <Text style={styles.userName}>👤 {u.full_name ?? u.email}</Text>
             <Text style={styles.userEmail}>{u.email}</Text>
             {u.phone && <Text style={styles.userMeta}>📞 {u.phone}</Text>}
+            {u.department_id != null && (
+              <Text style={styles.userMeta}>🏬 {departments.find(d => d.id === u.department_id)?.name ?? '—'}</Text>
+            )}
           </View>
           <View style={[styles.roleBadge, { backgroundColor: color + '22' }]}>
             <Text style={[styles.roleText, { color }]}>{roleLabel(u.role)}</Text>
@@ -156,10 +165,10 @@ export default function UsersStaff() {
         <Text style={styles.addBtnText}>+ Add User</Text>
       </TouchableOpacity>
 
-      {loading ? <ActivityIndicator color="#0EA5E9" size="large" style={{ marginTop: 48 }} /> : (
+      {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (
         <FlatList data={users} keyExtractor={(u, i) => (u.id ?? i).toString()} renderItem={renderUser}
           contentContainerStyle={{ padding: 12, paddingBottom: 32 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17B9A1" />}
           ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyIcon}>👥</Text><Text style={styles.emptyText}>No users</Text></View>}
         />
       )}
@@ -186,7 +195,7 @@ export default function UsersStaff() {
 
               <Text style={styles.fieldLabel}>Role</Text>
               <TouchableOpacity style={styles.input} onPress={() => setShowRolePicker(true)}>
-                <Text style={{ color: '#F1F5F9', fontSize: 14 }}>{roleLabel(form.role)}</Text>
+                <Text style={{ color: '#0F172A', fontSize: 14 }}>{roleLabel(form.role)}</Text>
               </TouchableOpacity>
 
               <Text style={styles.fieldLabel}>Phone</Text>
@@ -197,7 +206,7 @@ export default function UsersStaff() {
               {form.role === 'franchise' && <>
                 <Text style={styles.fieldLabel}>Organization *</Text>
                 <TouchableOpacity style={styles.input} onPress={() => setShowFranchisePicker(true)}>
-                  <Text style={{ color: form.franchise_id ? '#F1F5F9' : '#475569', fontSize: 14 }}>
+                  <Text style={{ color: form.franchise_id ? '#0F172A' : '#475569', fontSize: 14 }}>
                     {franchises.find(f => f.id === form.franchise_id)?.name ?? 'Select organization...'}
                   </Text>
                 </TouchableOpacity>
@@ -207,11 +216,19 @@ export default function UsersStaff() {
               {needsBranch && <>
                 <Text style={styles.fieldLabel}>Branch (optional)</Text>
                 <TouchableOpacity style={styles.input} onPress={() => setShowBranchPicker(true)}>
-                  <Text style={{ color: form.branch_id ? '#F1F5F9' : '#475569', fontSize: 14 }}>
+                  <Text style={{ color: form.branch_id ? '#0F172A' : '#475569', fontSize: 14 }}>
                     {branches.find(b => b.id === form.branch_id)?.name ?? 'Any branch'}
                   </Text>
                 </TouchableOpacity>
               </>}
+
+              {/* Department — general org function, applicable to any role */}
+              <Text style={styles.fieldLabel}>Department (optional)</Text>
+              <TouchableOpacity style={styles.input} onPress={() => setShowDeptPicker(true)}>
+                <Text style={{ color: form.department_id ? '#0F172A' : '#475569', fontSize: 14 }}>
+                  {departments.find(d => d.id === form.department_id)?.name ?? 'No department'}
+                </Text>
+              </TouchableOpacity>
             </ScrollView>
 
             <View style={styles.formBtns}>
@@ -287,17 +304,41 @@ export default function UsersStaff() {
           </View>
         </View>
       </Modal>
+
+      {/* Department picker */}
+      <Modal visible={showDeptPicker} transparent animationType="slide" onRequestClose={() => setShowDeptPicker(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.pickerBox}>
+            <Text style={styles.modalTitle}>Select Department</Text>
+            <ScrollView style={{ maxHeight: 320 }}>
+              <TouchableOpacity style={[styles.pickerItem, form.department_id === null && styles.pickerItemSel]}
+                onPress={() => { setForm(x => ({ ...x, department_id: null })); setShowDeptPicker(false); }}>
+                <Text style={styles.pickerText}>No department</Text>
+              </TouchableOpacity>
+              {departments.map(d => (
+                <TouchableOpacity key={d.id} style={[styles.pickerItem, form.department_id === d.id && styles.pickerItemSel]}
+                  onPress={() => { setForm(x => ({ ...x, department_id: d.id })); setShowDeptPicker(false); }}>
+                  <Text style={styles.pickerText}>{d.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowDeptPicker(false)}>
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: '#0F172A' },
-  addBtn:        { margin: 12, marginBottom: 0, padding: 12, borderRadius: 10, backgroundColor: '#0EA5E9', alignItems: 'center' },
+  container:     { flex: 1, backgroundColor: '#F8FAFC' },
+  addBtn:        { margin: 12, marginBottom: 0, padding: 12, borderRadius: 10, backgroundColor: '#17B9A1', alignItems: 'center' },
   addBtnText:    { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  card:          { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#334155' },
+  card:          { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
   cardTop:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  userName:      { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold' },
+  userName:      { color: '#0F172A', fontSize: 15, fontWeight: 'bold' },
   userEmail:     { color: '#64748B', fontSize: 12, marginTop: 2 },
   userMeta:      { color: '#64748B', fontSize: 12, marginTop: 2 },
   roleBadge:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
@@ -311,19 +352,19 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 48 },
   emptyText:     { color: '#475569', fontSize: 16, marginTop: 12 },
   overlay:       { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  formBox:       { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
-  modalTitle:    { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  formBox:       { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
+  modalTitle:    { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
   fieldLabel:    { color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 12 },
-  input:         { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155', justifyContent: 'center' },
+  input:         { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center' },
   formBtns:      { flexDirection: 'row', gap: 12, marginTop: 20 },
-  cancelBtn:     { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  cancelBtn:     { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   cancelText:    { color: '#94A3B8', fontWeight: '600' },
-  saveBtn:       { flex: 1.5, padding: 14, borderRadius: 10, backgroundColor: '#0EA5E9', alignItems: 'center' },
+  saveBtn:       { flex: 1.5, padding: 14, borderRadius: 10, backgroundColor: '#17B9A1', alignItems: 'center' },
   saveText:      { color: '#fff', fontWeight: '700' },
-  pickerBox:     { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
-  pickerItem:    { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#334155' },
-  pickerItemSel: { borderColor: '#0EA5E9', backgroundColor: '#0EA5E915' },
-  pickerText:    { color: '#F1F5F9', fontSize: 14 },
-  modalCancel:   { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  pickerBox:     { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  pickerItem:    { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  pickerItemSel: { borderColor: '#17B9A1', backgroundColor: '#17B9A115' },
+  pickerText:    { color: '#0F172A', fontSize: 14 },
+  modalCancel:   { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   modalCancelText:{ color: '#EF4444', fontWeight: '700' },
 });

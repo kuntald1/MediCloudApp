@@ -88,7 +88,7 @@ export default function Dashboard() {
 
   return (
     <ScrollView style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" />}>
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17B9A1" />}>
 
       {/* Franchise filter */}
       <View style={styles.filterBar}>
@@ -130,15 +130,15 @@ export default function Dashboard() {
         ))}
       </View>
 
-      {loading ? <ActivityIndicator color="#0EA5E9" size="large" style={{ marginTop: 48 }} /> : !kpis ? (
+      {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : !kpis ? (
         <View style={styles.empty}><Text style={styles.emptyText}>No data</Text></View>
       ) : (
         <>
           {/* ── KPI Cards ── */}
           <View style={styles.kpiRow}>
-            <View style={[styles.kpiCard, { borderTopColor: '#0EA5E9' }]}>
+            <View style={[styles.kpiCard, { borderTopColor: '#17B9A1' }]}>
               <Text style={styles.kpiLabel}>Billed</Text>
-              <Text style={[styles.kpiVal, { color: '#0EA5E9' }]}>{fmt(kpis.billed)}</Text>
+              <Text style={[styles.kpiVal, { color: '#17B9A1' }]}>{fmt(kpis.billed)}</Text>
               <Text style={styles.kpiSub}>{kpis.bills} bills</Text>
             </View>
             <View style={[styles.kpiCard, { borderTopColor: '#10B981' }]}>
@@ -193,7 +193,7 @@ export default function Dashboard() {
                   <View key={i} style={styles.methodRow}>
                     <Text style={styles.methodName}>{m.method}</Text>
                     <View style={styles.methodBarBg}>
-                      <View style={[styles.methodBarFill, { width: `${pct}%`, backgroundColor: i === 0 ? '#0EA5E9' : '#10B981' }]} />
+                      <View style={[styles.methodBarFill, { width: `${pct}%`, backgroundColor: i === 0 ? '#17B9A1' : '#10B981' }]} />
                     </View>
                     <Text style={styles.methodAmt}>{fmt(m.amount)} ({pct}%)</Text>
                   </View>
@@ -213,40 +213,16 @@ export default function Dashboard() {
                 <Text style={styles.th}>Share</Text>
               </View>
               {breakdown.map((b: any, i: number) => (
-                <View key={i} style={[styles.tableRow, i % 2 === 0 && { backgroundColor: '#0F172A' }]}>
-                  <Text style={[styles.td, { flex: 2, color: '#F1F5F9' }]} numberOfLines={1}>{b.company}</Text>
+                <View key={i} style={[styles.tableRow, i % 2 === 0 && { backgroundColor: '#F8FAFC' }]}>
+                  <Text style={[styles.td, { flex: 2, color: '#0F172A' }]} numberOfLines={1}>{b.company}</Text>
                   <Text style={styles.td}>{b.bills}</Text>
                   <Text style={[styles.td, { color: '#10B981' }]}>{fmt(b.billed)}</Text>
-                  <Text style={[styles.td, { color: '#0EA5E9' }]}>{b.share}%</Text>
+                  <Text style={[styles.td, { color: '#17B9A1' }]}>{b.share}%</Text>
                 </View>
               ))}
             </View>
           )}
 
-          {/* ── Recent Bills ── */}
-          {recent.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recent Bills</Text>
-              {recent.slice(0, 10).map((b: any, i: number) => {
-                const color = STATUS_COLOR[b.status] ?? '#64748B';
-                return (
-                  <View key={i} style={styles.billRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.billNo}>{b.bill_no}</Text>
-                      <Text style={styles.billPatient} numberOfLines={1}>{b.patient_name}</Text>
-                      <Text style={styles.billCompany}>{b.company}</Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={[styles.billTotal, { color }]}>{fmt(b.total)}</Text>
-                      <View style={[styles.billBadge, { borderColor: color }]}>
-                        <Text style={[styles.billBadgeText, { color }]}>{b.status}</Text>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
         </>
       )}
       <View style={{ height: 32 }} />
@@ -290,28 +266,28 @@ export default function Dashboard() {
 }
 
 const styles = StyleSheet.create({
-  container:       { flex: 1, backgroundColor: '#0F172A' },
+  container:       { flex: 1, backgroundColor: '#F8FAFC' },
   filterBar:       { paddingHorizontal: 12, paddingTop: 12 },
   filterLabel:     { color: '#94A3B8', fontSize: 11, fontWeight: '600', marginBottom: 6 },
-  franchiseBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1E293B', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#334155' },
-  franchiseBtnText:{ color: '#F1F5F9', fontSize: 13, flex: 1 },
+  franchiseBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+  franchiseBtnText:{ color: '#0F172A', fontSize: 13, flex: 1 },
   franchiseArrow:  { color: '#64748B', marginLeft: 8 },
   dateRow:         { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10 },
-  dateBtn:         { backgroundColor: '#1E293B', padding: 11, borderRadius: 10, borderWidth: 1, borderColor: '#334155' },
-  dateBtnText:     { color: '#F1F5F9', fontSize: 12 },
-  applyBtn:        { backgroundColor: '#0EA5E9', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10 },
+  dateBtn:         { backgroundColor: '#FFFFFF', padding: 11, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+  dateBtnText:     { color: '#0F172A', fontSize: 12 },
+  applyBtn:        { backgroundColor: '#17B9A1', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 10 },
   applyBtnText:    { color: '#fff', fontWeight: '700', fontSize: 13 },
   rangeRow:        { flexDirection: 'row', padding: 12, gap: 8 },
-  rangeBtn:        { flex: 1, padding: 9, borderRadius: 10, borderWidth: 1, borderColor: '#334155', backgroundColor: '#1E293B', alignItems: 'center' },
-  rangeBtnActive:  { backgroundColor: '#0EA5E9', borderColor: '#0EA5E9' },
+  rangeBtn:        { flex: 1, padding: 9, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF', alignItems: 'center' },
+  rangeBtnActive:  { backgroundColor: '#17B9A1', borderColor: '#17B9A1' },
   rangeBtnText:    { color: '#64748B', fontWeight: '600', fontSize: 12 },
   kpiRow:          { flexDirection: 'row', paddingHorizontal: 12, gap: 10, marginBottom: 10 },
-  kpiCard:         { flex: 1, backgroundColor: '#1E293B', borderRadius: 12, padding: 14, borderTopWidth: 3 },
+  kpiCard:         { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, borderTopWidth: 3 },
   kpiLabel:        { color: '#64748B', fontSize: 11, fontWeight: '600', marginBottom: 6 },
   kpiVal:          { fontSize: 20, fontWeight: 'bold', marginBottom: 2 },
   kpiSub:          { color: '#475569', fontSize: 11 },
-  section:         { marginHorizontal: 12, marginBottom: 12, backgroundColor: '#1E293B', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#334155' },
-  sectionTitle:    { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold', marginBottom: 12 },
+  section:         { marginHorizontal: 12, marginBottom: 12, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  sectionTitle:    { color: '#0F172A', fontSize: 15, fontWeight: 'bold', marginBottom: 12 },
   barChart:        { flexDirection: 'row', alignItems: 'flex-end', height: 130, gap: 10, paddingBottom: 4 },
   barWrap:         { alignItems: 'center', width: 50 },
   bar:             { width: 32, backgroundColor: '#F59E0B', borderRadius: 4, marginBottom: 4 },
@@ -320,15 +296,15 @@ const styles = StyleSheet.create({
   barBills:        { color: '#475569', fontSize: 9 },
   methodRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   methodName:      { color: '#94A3B8', fontSize: 12, width: 56 },
-  methodBarBg:     { flex: 1, height: 8, backgroundColor: '#0F172A', borderRadius: 4, overflow: 'hidden' },
+  methodBarBg:     { flex: 1, height: 8, backgroundColor: '#F8FAFC', borderRadius: 4, overflow: 'hidden' },
   methodBarFill:   { height: 8, borderRadius: 4 },
-  methodAmt:       { color: '#F1F5F9', fontSize: 11, width: 110, textAlign: 'right' },
-  tableHeader:     { flexDirection: 'row', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#334155', marginBottom: 4 },
+  methodAmt:       { color: '#0F172A', fontSize: 11, width: 110, textAlign: 'right' },
+  tableHeader:     { flexDirection: 'row', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', marginBottom: 4 },
   th:              { flex: 1, color: '#475569', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
   tableRow:        { flexDirection: 'row', paddingVertical: 8, borderRadius: 6, paddingHorizontal: 4 },
   td:              { flex: 1, color: '#94A3B8', fontSize: 12 },
-  billRow:         { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#334155' },
-  billNo:          { color: '#F1F5F9', fontSize: 13, fontWeight: '700' },
+  billRow:         { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  billNo:          { color: '#0F172A', fontSize: 13, fontWeight: '700' },
   billPatient:     { color: '#94A3B8', fontSize: 12 },
   billCompany:     { color: '#475569', fontSize: 11 },
   billTotal:       { fontSize: 14, fontWeight: 'bold', marginBottom: 4 },
@@ -337,11 +313,11 @@ const styles = StyleSheet.create({
   empty:           { alignItems: 'center', marginTop: 60 },
   emptyText:       { color: '#475569', fontSize: 16 },
   overlay:         { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  modalBox:        { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
-  modalTitle:      { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  patItem:         { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#334155' },
-  patItemSel:      { borderColor: '#0EA5E9', backgroundColor: '#0EA5E915' },
-  patName:         { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
-  modalCancel:     { marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  modalBox:        { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  modalTitle:      { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  patItem:         { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  patItemSel:      { borderColor: '#17B9A1', backgroundColor: '#17B9A115' },
+  patName:         { color: '#0F172A', fontSize: 14, fontWeight: '600' },
+  modalCancel:     { marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   modalCancelText: { color: '#EF4444', fontWeight: '700' },
 });

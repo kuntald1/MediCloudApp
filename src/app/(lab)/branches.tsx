@@ -137,7 +137,7 @@ export default function Branches() {
             <View style={styles.switchRow}>
               <Text style={styles.fieldLabel0}>Set as Main Branch</Text>
               <Switch value={form.is_main} onValueChange={v => setForm(f => ({ ...f, is_main: v }))}
-                trackColor={{ false: '#334155', true: '#F97316' }} thumbColor="#fff" />
+                trackColor={{ false: '#E2E8F0', true: '#F97316' }} thumbColor="#fff" />
             </View>
 
             <View style={styles.formBtns}>
@@ -156,14 +156,14 @@ export default function Branches() {
 }
 
 const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: '#0F172A' },
+  container:     { flex: 1, backgroundColor: '#F8FAFC' },
   addBtn:        { margin: 12, marginBottom: 0, padding: 12, borderRadius: 10, backgroundColor: '#F97316', alignItems: 'center' },
   addBtnText:    { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  card:          { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#334155' },
+  card:          { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
   cardTop:       { marginBottom: 6 },
-  name:          { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold', marginBottom: 6 },
+  name:          { color: '#0F172A', fontSize: 15, fontWeight: 'bold', marginBottom: 6 },
   tagRow:        { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  codeTag:       { backgroundColor: '#0F172A', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#334155' },
+  codeTag:       { backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#E2E8F0' },
   codeTagText:   { color: '#94A3B8', fontSize: 11, fontFamily: 'monospace' },
   mainTag:       { backgroundColor: '#F97316' + '22', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   mainTagText:   { color: '#F97316', fontSize: 11, fontWeight: '700' },
@@ -179,14 +179,14 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 48 },
   emptyText:     { color: '#475569', fontSize: 16, marginTop: 12 },
   overlay:       { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  formBox:       { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
-  modalTitle:    { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
+  formBox:       { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
+  modalTitle:    { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
   fieldLabel:    { color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 12 },
   fieldLabel0:   { color: '#94A3B8', fontSize: 13, fontWeight: '600' },
-  input:         { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
-  switchRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, backgroundColor: '#0F172A', padding: 12, borderRadius: 10 },
+  input:         { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  switchRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, backgroundColor: '#F8FAFC', padding: 12, borderRadius: 10 },
   formBtns:      { flexDirection: 'row', gap: 12, marginTop: 20 },
-  cancelBtn:     { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  cancelBtn:     { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   cancelText:    { color: '#94A3B8', fontWeight: '600' },
   saveBtn:       { flex: 1.5, padding: 14, borderRadius: 10, backgroundColor: '#F97316', alignItems: 'center' },
   saveText:      { color: '#fff', fontWeight: '700' },

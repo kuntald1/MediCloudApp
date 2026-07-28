@@ -1,9 +1,11 @@
-import { authHeader, API_BASE } from '../../../src/utils/auth';
+import { authHeader, API_BASE, getToken } from '../../../src/utils/auth';
+import { uploadPickedFile } from '../../../src/utils/uploadPickedFile';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator,
-  RefreshControl, Modal, ScrollView, TextInput, Alert, Switch, Platform,
+  RefreshControl, Modal, ScrollView, TextInput, Alert, Switch, Platform, Image,
 } from 'react-native';
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -14,7 +16,18 @@ interface Doctor {
   id: number; name: string; phone?: string | null;
   commission_percent: number; earned?: number; paid?: number; outstanding?: number;
   has_login?: boolean; is_registered?: boolean;
+  qualification?: string | null; registration_no?: string | null;
+  signature_filename?: string | null; signature_url?: string | null;
 }
+
+// Signature preview: prefer a full URL if the API already returns one,
+// otherwise build it from the filename via the shared /api/report-assets mount.
+const signatureUri = (d?: { signature_url?: string | null; signature_filename?: string | null } | null) => {
+  if (!d) return null;
+  if (d.signature_url) return d.signature_url.startsWith('http') ? d.signature_url : `${API_BASE}${d.signature_url}`;
+  if (d.signature_filename) return `${API_BASE}/api/report-assets/signatures/${d.signature_filename}`;
+  return null;
+};
 
 export default function DoctorCommission() {
   const [doctors, setDoctors]   = useState<Doctor[]>([]);
@@ -33,8 +46,11 @@ export default function DoctorCommission() {
 
   // Add/Edit doctor modal
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm]         = useState<{ id?: number; name: string; phone: string; commission_percent: string }>({ name: '', phone: '', commission_percent: '0' });
+  const [form, setForm]         = useState<{ id?: number; name: string; phone: string; commission_percent: string; qualification: string; registration_no: string }>({ name: '', phone: '', commission_percent: '0', qualification: '', registration_no: '' });
   const [savingDoc, setSavingDoc] = useState(false);
+  const [formSigUri, setFormSigUri] = useState<string | null>(null); // existing signature preview (server)
+  const [newSigAsset, setNewSigAsset] = useState<ImagePicker.ImagePickerAsset | null>(null); // freshly picked, not yet uploaded
+  const [uploadingSig, setUploadingSig] = useState(false);
 
   const fetchDoctors = useCallback(async () => {
     try {
@@ -95,8 +111,16 @@ export default function DoctorCommission() {
   };
 
   // ── Add/Edit doctor ──
-  const openAdd  = () => { setForm({ name: '', phone: '', commission_percent: '0' }); setShowForm(true); };
-  const openEdit = (d: Doctor) => { setForm({ id: d.id, name: d.name, phone: d.phone ?? '', commission_percent: String(d.commission_percent) }); setShowForm(true); };
+  const openAdd  = () => {
+    setForm({ name: '', phone: '', commission_percent: '0', qualification: '', registration_no: '' });
+    setFormSigUri(null); setNewSigAsset(null);
+    setShowForm(true);
+  };
+  const openEdit = (d: Doctor) => {
+    setForm({ id: d.id, name: d.name, phone: d.phone ?? '', commission_percent: String(d.commission_percent), qualification: d.qualification ?? '', registration_no: d.registration_no ?? '' });
+    setFormSigUri(signatureUri(d)); setNewSigAsset(null);
+    setShowForm(true);
+  };
 
   const saveDoctor = async () => {
     if (!form.name.trim()) { Alert.alert('Error', 'Name required'); return; }
@@ -106,14 +130,70 @@ export default function DoctorCommission() {
       const method = form.id ? 'PUT' : 'POST';
       const res = await fetch(url, {
         method, headers: { ...authHeader(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: form.name.trim(), phone: form.phone || null, commission_percent: Number(form.commission_percent) || 0 }),
+        body: JSON.stringify({
+          name: form.name.trim(), phone: form.phone || null, commission_percent: Number(form.commission_percent) || 0,
+          qualification: form.qualification.trim() || null, registration_no: form.registration_no.trim() || null,
+        }),
       });
       if (res.ok) {
+        const saved = await res.json().catch(() => null);
+        const newId = form.id ?? saved?.id;
+        // If a new signature was picked in this session, upload it now that we have a doctor id.
+        if (newSigAsset && newId) {
+          await uploadSignature(newId, newSigAsset);
+        }
         Alert.alert('✅ Saved', form.id ? 'Doctor updated' : 'Doctor added');
         setShowForm(false); fetchDoctors();
       } else { Alert.alert('Error', 'Could not save'); }
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setSavingDoc(false); }
+  };
+
+  // ── Signature upload/remove ──
+  const pickSignature = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permission needed', 'Allow photo library access to pick a signature image.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9, allowsEditing: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setNewSigAsset(asset);
+    setFormSigUri(asset.uri);
+    // If doctor already exists, upload immediately; otherwise it's queued for after Add saves.
+    if (form.id) await uploadSignature(form.id, asset);
+  };
+
+  const uploadSignature = async (doctorId: number, asset: ImagePicker.ImagePickerAsset) => {
+    setUploadingSig(true);
+    try {
+      const tok = getToken();
+      const filename = asset.fileName || `signature_${doctorId}.jpg`;
+      const type = asset.mimeType || 'image/jpeg';
+      const up = await uploadPickedFile(
+        `${API_BASE}/api/b2b/referral-doctors/${doctorId}/signature`,
+        asset.uri, filename, type, tok,
+      );
+      if (!up.ok) { Alert.alert('Error', 'Signature upload failed'); return; }
+      setNewSigAsset(null);
+      fetchDoctors();
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    finally { setUploadingSig(false); }
+  };
+
+  const removeSignature = () => {
+    if (!form.id) { setFormSigUri(null); setNewSigAsset(null); return; }
+    Alert.alert('Remove Signature', 'Remove this doctor\'s signature?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/b2b/referral-doctors/${form.id}/signature`, { method: 'DELETE', headers: authHeader() });
+          if (res.ok) { setFormSigUri(null); setNewSigAsset(null); fetchDoctors(); }
+          else { Alert.alert('Error', 'Could not remove signature'); }
+        } catch (e: any) { Alert.alert('Error', e.message); }
+      }},
+    ]);
   };
 
   const deleteDoctor = (d: Doctor) => Alert.alert('Delete Doctor', `Remove ${d.name}?`, [
@@ -132,9 +212,15 @@ export default function DoctorCommission() {
       <View style={styles.cardTop}>
         <View style={{ flex: 1 }}>
           <Text style={styles.docName}>👨‍⚕️ {d.name}</Text>
+          {(d.qualification || d.registration_no) && (
+            <Text style={styles.docQual}>
+              {d.qualification || ''}{d.qualification && d.registration_no ? ' · ' : ''}{d.registration_no ? `Reg. ${d.registration_no}` : ''}
+            </Text>
+          )}
           <View style={styles.tagRow}>
             {d.is_registered !== false && <View style={styles.regTag}><Text style={styles.regTagText}>✓ Registered</Text></View>}
             {d.has_login && <View style={styles.loginTag}><Text style={styles.loginTagText}>🩺 Login</Text></View>}
+            {signatureUri(d) && <View style={styles.sigTag}><Text style={styles.sigTagText}>✍️ Signature</Text></View>}
           </View>
         </View>
         <Text style={styles.commPct}>{d.commission_percent}%</Text>
@@ -203,10 +289,10 @@ export default function DoctorCommission() {
                 {/* Date filter */}
                 <View style={styles.filterRow}>
                   <TouchableOpacity style={styles.dateBtn} onPress={() => setShowFromPicker(true)}>
-                    <Text style={{ color: fromDate ? '#F1F5F9' : '#475569', fontSize: 12 }}>{fromDate || 'From'}</Text>
+                    <Text style={{ color: fromDate ? '#0F172A' : '#475569', fontSize: 12 }}>{fromDate || 'From'}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.dateBtn} onPress={() => setShowToPicker(true)}>
-                    <Text style={{ color: toDate ? '#F1F5F9' : '#475569', fontSize: 12 }}>{toDate || 'To'}</Text>
+                    <Text style={{ color: toDate ? '#0F172A' : '#475569', fontSize: 12 }}>{toDate || 'To'}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.filterApply} onPress={applyLedgerFilter}>
                     <Text style={styles.filterApplyText}>Apply</Text>
@@ -279,6 +365,37 @@ export default function DoctorCommission() {
             <TextInput style={styles.input} value={form.commission_percent} onChangeText={v => setForm(f => ({ ...f, commission_percent: v }))}
               placeholder="0" placeholderTextColor="#475569" keyboardType="numeric" />
 
+            <Text style={styles.fieldLabel}>Qualification</Text>
+            <TextInput style={styles.input} value={form.qualification} onChangeText={v => setForm(f => ({ ...f, qualification: v }))}
+              placeholder="e.g. MD (Pathology)" placeholderTextColor="#475569" />
+
+            <Text style={styles.fieldLabel}>Registration No.</Text>
+            <TextInput style={styles.input} value={form.registration_no} onChangeText={v => setForm(f => ({ ...f, registration_no: v }))}
+              placeholder="e.g. WBMC/12345" placeholderTextColor="#475569" />
+
+            <Text style={styles.fieldLabel}>Signature</Text>
+            <Text style={styles.hintSmall}>Printed on validated reports next to this doctor's qualification & reg. no.</Text>
+            {formSigUri ? (
+              <View style={styles.sigPreviewBox}>
+                <Image source={{ uri: formSigUri }} style={styles.sigPreviewImg} resizeMode="contain" />
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                  <TouchableOpacity style={styles.sigChangeBtn} onPress={pickSignature} disabled={uploadingSig}>
+                    <Text style={styles.sigChangeText}>{uploadingSig ? 'Uploading...' : 'Change'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.sigRemoveBtn} onPress={removeSignature} disabled={uploadingSig}>
+                    <Text style={styles.sigRemoveText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.sigPickBtn} onPress={pickSignature} disabled={uploadingSig}>
+                {uploadingSig ? <ActivityIndicator color="#8B5CF6" /> : <Text style={styles.sigPickText}>✍️ Upload Signature</Text>}
+              </TouchableOpacity>
+            )}
+            {!form.id && newSigAsset && (
+              <Text style={styles.hintSmall}>Will be uploaded once this doctor is saved.</Text>
+            )}
+
             <View style={styles.formBtns}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowForm(false)}>
                 <Text style={styles.cancelText}>Cancel</Text>
@@ -295,22 +412,25 @@ export default function DoctorCommission() {
 }
 
 const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: '#0F172A' },
+  container:     { flex: 1, backgroundColor: '#F8FAFC' },
   addDocBtn:     { margin: 12, marginBottom: 0, padding: 12, borderRadius: 10, backgroundColor: '#F97316', alignItems: 'center' },
   addDocText:    { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  card:          { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#334155' },
+  card:          { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
   cardTop:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  docName:       { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold' },
-  tagRow:        { flexDirection: 'row', gap: 6, marginTop: 4 },
+  docName:       { color: '#0F172A', fontSize: 15, fontWeight: 'bold' },
+  docQual:       { color: '#64748B', fontSize: 11, marginTop: 2 },
+  tagRow:        { flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap' },
   regTag:        { backgroundColor: '#10B98122', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   regTagText:    { color: '#10B981', fontSize: 10, fontWeight: '600' },
   loginTag:      { backgroundColor: '#3B82F622', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   loginTagText:  { color: '#3B82F6', fontSize: 10, fontWeight: '600' },
+  sigTag:        { backgroundColor: '#8B5CF622', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  sigTagText:    { color: '#8B5CF6', fontSize: 10, fontWeight: '600' },
   commPct:       { color: '#8B5CF6', fontSize: 16, fontWeight: '700' },
   amtRow:        { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  amtBox:        { flex: 1, backgroundColor: '#0F172A', borderRadius: 8, padding: 8, alignItems: 'center' },
+  amtBox:        { flex: 1, backgroundColor: '#F8FAFC', borderRadius: 8, padding: 8, alignItems: 'center' },
   amtLabel:      { color: '#64748B', fontSize: 10, marginBottom: 2 },
-  amtVal:        { color: '#F1F5F9', fontSize: 13, fontWeight: 'bold' },
+  amtVal:        { color: '#0F172A', fontSize: 13, fontWeight: 'bold' },
   actionRow:     { flexDirection: 'row', gap: 8 },
   ledgerBtn:     { flex: 1, backgroundColor: '#F59E0B22', padding: 10, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#F59E0B44' },
   ledgerBtnText: { color: '#F59E0B', fontWeight: '700', fontSize: 13 },
@@ -322,40 +442,49 @@ const styles = StyleSheet.create({
   emptyIcon:     { fontSize: 48 },
   emptyText:     { color: '#475569', fontSize: 16, marginTop: 12 },
   overlay:       { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  ledgerBox:     { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28, maxHeight: '90%' },
+  ledgerBox:     { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28, maxHeight: '90%' },
   ledgerHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
-  ledgerName:    { color: '#F1F5F9', fontSize: 20, fontWeight: 'bold' },
+  ledgerName:    { color: '#0F172A', fontSize: 20, fontWeight: 'bold' },
   ledgerSub:     { color: '#64748B', fontSize: 12, marginTop: 2 },
   closeX:        { color: '#64748B', fontSize: 22 },
   summaryRow:    { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  sumBox:        { flex: 1, backgroundColor: '#0F172A', borderRadius: 10, padding: 12, alignItems: 'center' },
+  sumBox:        { flex: 1, backgroundColor: '#F8FAFC', borderRadius: 10, padding: 12, alignItems: 'center' },
   sumLabel:      { color: '#64748B', fontSize: 10, marginBottom: 4 },
-  sumVal:        { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold' },
+  sumVal:        { color: '#0F172A', fontSize: 15, fontWeight: 'bold' },
   filterRow:     { flexDirection: 'row', gap: 6, marginBottom: 10, alignItems: 'center' },
-  dateBtn:       { flex: 1, backgroundColor: '#0F172A', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#334155', justifyContent: 'center' },
-  filterApply:   { backgroundColor: '#0EA5E9', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
+  dateBtn:       { flex: 1, backgroundColor: '#F8FAFC', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center' },
+  filterApply:   { backgroundColor: '#17B9A1', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
   filterApplyText:{ color: '#fff', fontWeight: '700', fontSize: 12 },
   filterClear:   { paddingHorizontal: 10, paddingVertical: 10 },
   filterClearText:{ color: '#EF4444', fontSize: 12 },
   payBtn:        { backgroundColor: '#16A34A', padding: 13, borderRadius: 10, alignItems: 'center', marginBottom: 16 },
   payBtnText:    { color: '#fff', fontWeight: 'bold', fontSize: 15 },
   ledgerTitle:   { color: '#94A3B8', fontSize: 13, fontWeight: '700', marginBottom: 10 },
-  entryRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#334155' },
-  entryTest:     { color: '#F1F5F9', fontSize: 13, fontWeight: '600' },
+  entryRow:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  entryTest:     { color: '#0F172A', fontSize: 13, fontWeight: '600' },
   pkgTag:        { color: '#F59E0B', fontSize: 10 },
   entryMeta:     { color: '#64748B', fontSize: 11, marginTop: 2 },
-  entryComm:     { color: '#F1F5F9', fontSize: 14, fontWeight: 'bold' },
+  entryComm:     { color: '#0F172A', fontSize: 14, fontWeight: 'bold' },
   entryPct:      { color: '#64748B', fontSize: 10, marginTop: 2 },
   paidBadge:     { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginTop: 4 },
   paidBadgeText: { fontSize: 10, fontWeight: '600' },
   noData:        { color: '#64748B', textAlign: 'center', paddingVertical: 24 },
-  formBox:       { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
-  modalTitle:    { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
+  formBox:       { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
+  modalTitle:    { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
   hint:          { color: '#64748B', fontSize: 12, marginBottom: 16 },
   fieldLabel:    { color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 12 },
-  input:         { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
+  input:         { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  hintSmall:     { color: '#94A3B8', fontSize: 11, marginTop: 4, marginBottom: 8 },
+  sigPickBtn:    { backgroundColor: '#8B5CF622', borderWidth: 1, borderColor: '#8B5CF644', borderStyle: 'dashed', borderRadius: 10, padding: 16, alignItems: 'center' },
+  sigPickText:   { color: '#8B5CF6', fontWeight: '600', fontSize: 13 },
+  sigPreviewBox: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, padding: 12, alignItems: 'center' },
+  sigPreviewImg: { width: '100%', height: 80 },
+  sigChangeBtn:  { flex: 1, backgroundColor: '#3B82F622', padding: 10, borderRadius: 8, alignItems: 'center' },
+  sigChangeText: { color: '#3B82F6', fontWeight: '600', fontSize: 12 },
+  sigRemoveBtn:  { flex: 1, backgroundColor: '#EF444422', padding: 10, borderRadius: 8, alignItems: 'center' },
+  sigRemoveText: { color: '#EF4444', fontWeight: '600', fontSize: 12 },
   formBtns:      { flexDirection: 'row', gap: 12, marginTop: 20 },
-  cancelBtn:     { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  cancelBtn:     { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   cancelText:    { color: '#94A3B8', fontWeight: '600' },
   saveBtn:       { flex: 1.5, padding: 14, borderRadius: 10, backgroundColor: '#8B5CF6', alignItems: 'center' },
   saveText:      { color: '#fff', fontWeight: '700' },

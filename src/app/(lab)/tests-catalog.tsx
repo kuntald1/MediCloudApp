@@ -7,7 +7,7 @@ import {
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
-interface Test  { id: number; name: string; mrp: number; price: number; normal_value?: string; sample_tube_id?: number | null; assigned_doctor_id?: number | null; sample_type?: string; }
+interface Test  { id: number; name: string; mrp: number; price: number; normal_value?: string; sample_tube_id?: number | null; assigned_doctor_id?: number | null; sample_type?: string; interpretation?: string | null; disclaimer?: string | null; }
 interface Tube  { id: number; name: string; }
 interface Doctor{ id: number; name: string; }
 interface TestGroup { id: number; name: string; code?: string | null; price: number; tests: { id: number; name: string; price: number }[]; test_ids: number[]; sum_price: number; }
@@ -25,7 +25,7 @@ export default function TestsCatalog() {
 
   // Inline edit test
   const [editingTestId, setEditingTestId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ mrp: '', price: '', normal_value: '', sample_tube_id: null as number | null, assigned_doctor_id: null as number | null });
+  const [editForm, setEditForm] = useState({ mrp: '', price: '', normal_value: '', sample_tube_id: null as number | null, assigned_doctor_id: null as number | null, interpretation: '', disclaimer: '' });
   const [savingTest, setSavingTest] = useState(false);
   const [showTubePicker, setShowTubePicker]     = useState(false);
   const [showDoctorPicker, setShowDoctorPicker] = useState(false);
@@ -67,6 +67,7 @@ export default function TestsCatalog() {
     setEditForm({
       mrp: String(t.mrp), price: String(t.price), normal_value: t.normal_value ?? '',
       sample_tube_id: t.sample_tube_id ?? null, assigned_doctor_id: t.assigned_doctor_id ?? null,
+      interpretation: t.interpretation ?? '', disclaimer: t.disclaimer ?? '',
     });
   };
 
@@ -80,6 +81,7 @@ export default function TestsCatalog() {
           mrp: Number(editForm.mrp) || 0, price: Number(editForm.price) || 0,
           normal_value: editForm.normal_value || null,
           sample_tube_id: editForm.sample_tube_id, assigned_doctor_id: editForm.assigned_doctor_id,
+          interpretation: editForm.interpretation || null, disclaimer: editForm.disclaimer || null,
         }),
       });
       if (res.ok) { setEditingTestId(null); fetchAll(); }
@@ -193,12 +195,24 @@ export default function TestsCatalog() {
             <TextInput style={styles.input} value={editForm.normal_value} onChangeText={v => setEditForm(f => ({ ...f, normal_value: v }))} placeholder="e.g. < 200 mg/dL" placeholderTextColor="#475569" />
             <Text style={styles.fieldLabel}>Sample Tube</Text>
             <TouchableOpacity style={styles.input} onPress={() => setShowTubePicker(true)}>
-              <Text style={{ color: '#F1F5F9' }}>{tubeName(editForm.sample_tube_id)}</Text>
+              <Text style={{ color: '#0F172A' }}>{tubeName(editForm.sample_tube_id)}</Text>
             </TouchableOpacity>
             <Text style={styles.fieldLabel}>Assigned Doctor</Text>
             <TouchableOpacity style={styles.input} onPress={() => setShowDoctorPicker(true)}>
-              <Text style={{ color: '#F1F5F9' }}>{doctorName(editForm.assigned_doctor_id)}</Text>
+              <Text style={{ color: '#0F172A' }}>{doctorName(editForm.assigned_doctor_id)}</Text>
             </TouchableOpacity>
+            <Text style={styles.fieldLabel}>Interpretation</Text>
+            <TextInput style={styles.textArea} value={editForm.interpretation}
+              onChangeText={v => setEditForm(f => ({ ...f, interpretation: v }))}
+              placeholder="Clinical interpretation notes for this test" placeholderTextColor="#475569"
+              multiline numberOfLines={4} />
+            <Text style={styles.fieldHint}>Shown on the report, below this test's results.</Text>
+            <Text style={styles.fieldLabel}>Disclaimer</Text>
+            <TextInput style={styles.textArea} value={editForm.disclaimer}
+              onChangeText={v => setEditForm(f => ({ ...f, disclaimer: v }))}
+              placeholder="Disclaimer text for this test" placeholderTextColor="#475569"
+              multiline numberOfLines={4} />
+            <Text style={styles.fieldHint}>Shown on the report, below this test's results.</Text>
             <View style={styles.editBtns}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingTestId(null)}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
               <TouchableOpacity style={styles.saveBtn} onPress={saveTest} disabled={savingTest}>
@@ -357,23 +371,23 @@ export default function TestsCatalog() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0F172A' },
-  center:         { flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' },
-  tabRow:         { flexDirection: 'row', margin: 12, marginBottom: 0, backgroundColor: '#1E293B', borderRadius: 10, padding: 4 },
+  container:      { flex: 1, backgroundColor: '#F8FAFC' },
+  center:         { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
+  tabRow:         { flexDirection: 'row', margin: 12, marginBottom: 0, backgroundColor: '#FFFFFF', borderRadius: 10, padding: 4 },
   tab:            { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
   tabActive:      { backgroundColor: '#F97316' },
   tabText:        { color: '#64748B', fontWeight: '600', fontSize: 13 },
   tabTextActive:  { color: '#fff' },
   searchWrap:     { padding: 12, paddingBottom: 0 },
-  search:         { backgroundColor: '#1E293B', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
+  search:         { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   addBtn:         { margin: 12, marginBottom: 0, padding: 12, borderRadius: 10, backgroundColor: '#F97316', alignItems: 'center' },
   addBtnText:     { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  card:           { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#334155' },
+  card:           { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
   cardEditing:    { borderColor: '#F97316' },
   cardTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  testName:       { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold', flex: 1 },
+  testName:       { color: '#0F172A', fontSize: 15, fontWeight: 'bold', flex: 1 },
   actionRow:      { flexDirection: 'row', gap: 6 },
-  iconBtn:        { backgroundColor: '#0F172A', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#334155' },
+  iconBtn:        { backgroundColor: '#F8FAFC', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' },
   priceRow:       { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   mrpText:        { color: '#475569', fontSize: 12, textDecorationLine: 'line-through' },
   priceText:      { color: '#10B981', fontSize: 16, fontWeight: 'bold' },
@@ -388,26 +402,28 @@ const styles = StyleSheet.create({
   editForm:       {},
   editRow:        { flexDirection: 'row', gap: 10, alignItems: 'flex-end' },
   fieldLabel:     { color: '#94A3B8', fontSize: 11, fontWeight: '600', marginBottom: 6, marginTop: 10 },
-  input:          { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 10, borderRadius: 8, fontSize: 13, borderWidth: 1, borderColor: '#334155' },
+  input:          { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 10, borderRadius: 8, fontSize: 13, borderWidth: 1, borderColor: '#E2E8F0' },
+  textArea:       { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 10, borderRadius: 8, fontSize: 13, borderWidth: 1, borderColor: '#E2E8F0', minHeight: 80, textAlignVertical: 'top' },
+  fieldHint:      { color: '#94A3B8', fontSize: 10, marginTop: 4, marginBottom: 8 },
   editBtns:       { flexDirection: 'row', gap: 10, marginTop: 14 },
-  cancelBtn:      { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#0F172A', alignItems: 'center' },
+  cancelBtn:      { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#F8FAFC', alignItems: 'center' },
   cancelText:     { color: '#94A3B8', fontWeight: '600', fontSize: 13 },
   saveBtn:        { flex: 1.5, padding: 12, borderRadius: 8, backgroundColor: '#F97316', alignItems: 'center' },
   saveText:       { color: '#fff', fontWeight: '700', fontSize: 13 },
   overlay:        { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  pickerBox:      { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
-  modalTitle:     { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  pickerItem:     { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#334155' },
-  pickerText:     { color: '#F1F5F9', fontSize: 14 },
-  modalCancel:    { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  pickerBox:      { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  modalTitle:     { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  pickerItem:     { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  pickerText:     { color: '#0F172A', fontSize: 14 },
+  modalCancel:    { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   modalCancelText:{ color: '#EF4444', fontWeight: '700' },
-  formBox:        { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32, maxHeight: '92%' },
-  groupTestList:  { maxHeight: 220, backgroundColor: '#0F172A', borderRadius: 10, marginTop: 8 },
-  groupTestRow:   { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#1E293B' },
+  formBox:        { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32, maxHeight: '92%' },
+  groupTestList:  { maxHeight: 220, backgroundColor: '#F8FAFC', borderRadius: 10, marginTop: 8 },
+  groupTestRow:   { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   groupTestRowSel:{ backgroundColor: '#F9731615' },
-  checkbox:       { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: '#334155', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  checkbox:       { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   checkmark:      { color: '#F97316', fontWeight: 'bold', fontSize: 12 },
-  groupTestName:  { flex: 1, color: '#F1F5F9', fontSize: 13 },
+  groupTestName:  { flex: 1, color: '#0F172A', fontSize: 13 },
   groupTestPrice: { color: '#10B981', fontSize: 12, fontWeight: '700' },
   resetBtn:       { justifyContent: 'center', paddingHorizontal: 8 },
   resetBtnText:   { color: '#F97316', fontSize: 11 },

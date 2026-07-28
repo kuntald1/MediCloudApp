@@ -12,8 +12,14 @@ export default function RootLayout() {
 
   return (
     <>
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style="dark" />
+      <Stack screenOptions={{ headerShown: false }} initialRouteName="index">
+        <Stack.Screen name="index" />
+        <Stack.Screen
+          name="scan-camera"
+          options={{ presentation: 'fullScreenModal', animation: 'slide_from_bottom' }}
+        />
+      </Stack>
     </>
   );
 }

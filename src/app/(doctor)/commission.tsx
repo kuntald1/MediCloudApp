@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 
 interface LedgerEntry {
-  id: number; patient_name: string; barcode: string; bill_no: string;
+  id: number; patient_name: string; barcode: string; bill_no: string; accession_number?: string;
   test_name: string; package_name?: string | null;
   base_amount: number; commission_percent: number; commission_amount: number;
   is_paid: boolean; paid_at?: string | null; validated_at?: string | null; created_at: string;
@@ -72,8 +72,39 @@ export default function MyCommission() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={data?.entries ?? []}
-        keyExtractor={(it) => it.id.toString()}
+        data={(() => {
+          // Flatten entries into a display list: group headers (showing the
+          // GROUP's total commission once) + member rows (no individual
+          // commission shown, since it was earned by the group as a whole,
+          // not by whichever member happened to carry the nonzero amount).
+          const entries = data?.entries ?? [];
+          type Row =
+            | { kind: 'header'; key: string; packageName: string; total: number; count: number; anyUnpaid: boolean }
+            | { kind: 'member'; key: string; entry: LedgerEntry }
+            | { kind: 'standalone'; key: string; entry: LedgerEntry };
+          const rows: Row[] = [];
+          const groupOrder: string[] = [];
+          const groupMap: Record<string, LedgerEntry[]> = {};
+          const standalone: LedgerEntry[] = [];
+          entries.forEach(e => {
+            if (e.package_name) {
+              const key = `${e.bill_no}__${e.package_name}`;
+              if (!groupMap[key]) { groupMap[key] = []; groupOrder.push(key); }
+              groupMap[key].push(e);
+            } else {
+              standalone.push(e);
+            }
+          });
+          groupOrder.forEach(key => {
+            const members = groupMap[key];
+            const total = members.reduce((s, m) => s + (Number(m.commission_amount) || 0), 0);
+            rows.push({ kind: 'header', key, packageName: members[0].package_name!, total, count: members.length, anyUnpaid: members.some(m => !m.is_paid) });
+            members.forEach(m => rows.push({ kind: 'member', key: `${key}-${m.id}`, entry: m }));
+          });
+          standalone.forEach(e => rows.push({ kind: 'standalone', key: `s-${e.id}`, entry: e }));
+          return rows;
+        })()}
+        keyExtractor={(row: any) => row.key}
         contentContainerStyle={{ padding: 12, paddingBottom: 32 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#8B5CF6" />}
         ListHeaderComponent={
@@ -105,13 +136,13 @@ export default function MyCommission() {
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={styles.filterLabel}>From</Text>
                 <TouchableOpacity style={styles.dateBtn} onPress={() => setShowFromPicker(true)}>
-                  <Text style={{ color: fromDate ? '#F1F5F9' : '#475569', fontSize: 12 }}>{fromDate || 'Any'}</Text>
+                  <Text style={{ color: fromDate ? '#0F172A' : '#475569', fontSize: 12 }}>{fromDate || 'Any'}</Text>
                 </TouchableOpacity>
               </View>
               <View style={{ flex: 1, marginRight: 8 }}>
                 <Text style={styles.filterLabel}>To</Text>
                 <TouchableOpacity style={styles.dateBtn} onPress={() => setShowToPicker(true)}>
-                  <Text style={{ color: toDate ? '#F1F5F9' : '#475569', fontSize: 12 }}>{toDate || 'Any'}</Text>
+                  <Text style={{ color: toDate ? '#0F172A' : '#475569', fontSize: 12 }}>{toDate || 'Any'}</Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity style={styles.applyBtn} onPress={applyFilters}>
@@ -127,24 +158,52 @@ export default function MyCommission() {
             <Text style={styles.ledgerTitle}>Ledger · per test earned ({summary?.count ?? 0})</Text>
           </View>
         }
-        renderItem={({ item: e }) => (
-          <View style={styles.entryRow}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.entryTest} numberOfLines={2}>
-                {e.test_name}{e.package_name ? <Text style={styles.pkgTag}>  {e.package_name}</Text> : null}
-              </Text>
-              <Text style={styles.entryPatient}>{e.patient_name}</Text>
-              <Text style={styles.entryMeta}>{e.bill_no} · {e.barcode} · {fmtDate(e.validated_at ?? e.created_at)}</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.entryComm}>{inr(e.commission_amount)}</Text>
-              <Text style={styles.entryPct}>{e.commission_percent}% of {inr(e.base_amount)}</Text>
-              <View style={[styles.paidBadge, { backgroundColor: e.is_paid ? '#10B98122' : '#F59E0B22' }]}>
-                <Text style={[styles.paidBadgeText, { color: e.is_paid ? '#10B981' : '#F59E0B' }]}>{e.is_paid ? '✓ Paid' : 'Pending'}</Text>
+        renderItem={({ item: row }: { item: any }) => {
+          if (row.kind === 'header') {
+            return (
+              <View style={styles.groupHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupHeaderText}>{row.packageName} <Text style={styles.grpTag}>GROUP · {row.count} tests</Text></Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.groupHeaderAmount}>{inr(row.total)}</Text>
+                  <Text style={styles.groupHeaderSub}>group earning</Text>
+                </View>
+              </View>
+            );
+          }
+          const e: LedgerEntry = row.entry;
+          if (row.kind === 'member') {
+            return (
+              <View style={styles.memberRow}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.memberTest} numberOfLines={1}>• {e.test_name}</Text>
+                  <Text style={styles.entryMeta}>{e.bill_no} · {e.barcode}{e.accession_number ? ` · ${e.accession_number}` : ''}</Text>
+                </View>
+                <View style={[styles.paidBadge, { backgroundColor: e.is_paid ? '#10B98122' : '#F59E0B22' }]}>
+                  <Text style={[styles.paidBadgeText, { color: e.is_paid ? '#10B981' : '#F59E0B' }]}>{e.is_paid ? '✓ Paid' : 'Pending'}</Text>
+                </View>
+              </View>
+            );
+          }
+          // standalone
+          return (
+            <View style={styles.entryRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.entryTest} numberOfLines={2}>{e.test_name}</Text>
+                <Text style={styles.entryPatient}>{e.patient_name}</Text>
+                <Text style={styles.entryMeta}>{e.bill_no} · {e.barcode}{e.accession_number ? ` · ${e.accession_number}` : ''} · {fmtDate(e.validated_at ?? e.created_at)}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.entryComm}>{inr(e.commission_amount)}</Text>
+                <Text style={styles.entryPct}>{e.commission_percent}% of {inr(e.base_amount)}</Text>
+                <View style={[styles.paidBadge, { backgroundColor: e.is_paid ? '#10B98122' : '#F59E0B22' }]}>
+                  <Text style={[styles.paidBadgeText, { color: e.is_paid ? '#10B981' : '#F59E0B' }]}>{e.is_paid ? '✓ Paid' : 'Pending'}</Text>
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          );
+        }}
         ListEmptyComponent={!loading ? (
           <Text style={styles.noData}>No entries{activeFilterCount > 0 ? ' in this range' : ''}</Text>
         ) : null}
@@ -165,27 +224,34 @@ export default function MyCommission() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0F172A' },
-  center:         { flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  container:      { flex: 1, backgroundColor: '#F8FAFC' },
+  center:         { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', padding: 24 },
   emptyIcon:      { fontSize: 48 },
   emptyText:      { color: '#64748B', fontSize: 15, marginTop: 12, textAlign: 'center' },
-  profileCard:    { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#334155' },
-  profileName:    { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold' },
+  profileCard:    { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  profileName:    { color: '#0F172A', fontSize: 18, fontWeight: 'bold' },
   profilePct:     { color: '#8B5CF6', fontSize: 12, marginTop: 3, fontWeight: '600' },
   summaryRow:     { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  sumBox:         { flex: 1, backgroundColor: '#1E293B', borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
+  sumBox:         { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   sumLabel:       { color: '#64748B', fontSize: 11, marginBottom: 4 },
-  sumVal:         { color: '#F1F5F9', fontSize: 16, fontWeight: 'bold' },
+  sumVal:         { color: '#0F172A', fontSize: 16, fontWeight: 'bold' },
   filterBar:      { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 },
   filterLabel:    { color: '#94A3B8', fontSize: 11, fontWeight: '600', marginBottom: 6 },
-  dateBtn:        { backgroundColor: '#1E293B', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#334155', justifyContent: 'center' },
+  dateBtn:        { backgroundColor: '#FFFFFF', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center' },
   applyBtn:       { backgroundColor: '#8B5CF6', paddingHorizontal: 16, paddingVertical: 11, borderRadius: 8 },
   applyBtnText:   { color: '#fff', fontWeight: '700', fontSize: 13 },
   resetText:      { color: '#EF4444', fontSize: 12 },
   ledgerTitle:    { color: '#94A3B8', fontSize: 13, fontWeight: '700', marginTop: 6, marginBottom: 10 },
-  entryRow:       { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#1E293B', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#334155' },
-  entryTest:      { color: '#F1F5F9', fontSize: 13, fontWeight: '700' },
+  entryRow:       { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#FFFFFF', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  entryTest:      { color: '#0F172A', fontSize: 13, fontWeight: '700' },
   pkgTag:         { color: '#64748B', fontSize: 11, fontWeight: '400' },
+  groupHeaderRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#6366F110', borderWidth: 1, borderColor: '#6366f1', borderRadius: 10, padding: 12, marginTop: 4, marginBottom: 4 },
+  groupHeaderText:  { color: '#0F172A', fontSize: 13.5, fontWeight: '700' },
+  grpTag:           { color: '#6366f1', fontSize: 10.5, fontWeight: '700' },
+  groupHeaderAmount:{ color: '#10B981', fontSize: 16, fontWeight: 'bold' },
+  groupHeaderSub:   { color: '#6366f1', fontSize: 10, fontWeight: '600', marginTop: 1 },
+  memberRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', borderRadius: 8, padding: 10, marginLeft: 14, marginBottom: 6, borderWidth: 1, borderColor: '#F1F5F9' },
+  memberTest:       { color: '#334155', fontSize: 12.5, fontWeight: '600' },
   entryPatient:   { color: '#94A3B8', fontSize: 12, marginTop: 3 },
   entryMeta:      { color: '#475569', fontSize: 11, marginTop: 3 },
   entryComm:      { color: '#10B981', fontSize: 15, fontWeight: 'bold' },

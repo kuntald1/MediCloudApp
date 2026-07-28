@@ -20,7 +20,7 @@ const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n
 const STATUS_COLOR: Record<string, string> = { paid: '#10B981', unpaid: '#EF4444', credit: '#8B5CF6', partial: '#F59E0B' };
 
 const KPI_CARDS: { key: string; label: string; color: string; fmt: (k: any) => string; sub?: (k: any) => string }[] = [
-  { key: 'billed',    label: 'Billed',    color: '#0EA5E9', fmt: k => fmt(k.billed) },
+  { key: 'billed',    label: 'Billed',    color: '#17B9A1', fmt: k => fmt(k.billed) },
   { key: 'collected', label: 'Collected', color: '#10B981', fmt: k => fmt(k.collected) },
   { key: 'balance',   label: 'Balance',   color: '#EF4444', fmt: k => fmt(k.balance) },
   { key: 'bills',     label: 'Bills',     color: '#6366F1', fmt: k => String(k.bills ?? 0) },
@@ -88,7 +88,7 @@ export default function FranchiseDashboard() {
 
   return (
     <ScrollView style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" />}>
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17B9A1" />}>
 
       {!!franchiseName && <Text style={styles.franchiseName}>{franchiseName}</Text>}
 
@@ -121,7 +121,7 @@ export default function FranchiseDashboard() {
         ))}
       </View>
 
-      {loading ? <ActivityIndicator color="#0EA5E9" size="large" style={{ marginTop: 48 }} /> : !kpis ? (
+      {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : !kpis ? (
         <View style={styles.empty}><Text style={styles.emptyText}>No data</Text></View>
       ) : (
         <>
@@ -169,7 +169,7 @@ export default function FranchiseDashboard() {
                   <View key={i} style={styles.methodRow}>
                     <Text style={styles.methodName}>{m.method}</Text>
                     <View style={styles.methodBarBg}>
-                      <View style={[styles.methodBarFill, { width: `${pct}%`, backgroundColor: i === 0 ? '#0EA5E9' : '#10B981' }]} />
+                      <View style={[styles.methodBarFill, { width: `${pct}%`, backgroundColor: i === 0 ? '#17B9A1' : '#10B981' }]} />
                     </View>
                     <Text style={styles.methodAmt}>{fmt(m.amount)} ({pct}%)</Text>
                   </View>
@@ -189,41 +189,16 @@ export default function FranchiseDashboard() {
                 <Text style={styles.th}>Share</Text>
               </View>
               {breakdown.map((b: any, i: number) => (
-                <View key={i} style={[styles.tableRow, i % 2 === 0 && { backgroundColor: '#0F172A' }]}>
-                  <Text style={[styles.td, { flex: 2, color: '#F1F5F9' }]} numberOfLines={1}>{b.company}</Text>
+                <View key={i} style={[styles.tableRow, i % 2 === 0 && { backgroundColor: '#F8FAFC' }]}>
+                  <Text style={[styles.td, { flex: 2, color: '#0F172A' }]} numberOfLines={1}>{b.company}</Text>
                   <Text style={styles.td}>{b.bills}</Text>
                   <Text style={[styles.td, { color: '#10B981' }]}>{fmt(b.billed)}</Text>
-                  <Text style={[styles.td, { color: '#0EA5E9' }]}>{b.share}%</Text>
+                  <Text style={[styles.td, { color: '#17B9A1' }]}>{b.share}%</Text>
                 </View>
               ))}
             </View>
           )}
 
-          {/* Recent Bills */}
-          {recent.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Recent Bills</Text>
-              {recent.slice(0, 15).map((b: any, i: number) => {
-                const color = STATUS_COLOR[b.status] ?? '#64748B';
-                return (
-                  <View key={i} style={styles.billRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.billNo}>{b.bill_no}</Text>
-                      <Text style={styles.billPatient} numberOfLines={1}>{b.patient_name}</Text>
-                      <Text style={styles.billMeta}>{b.barcode} · #{b.patient_id} · {fmtDateTime(b.created_at)}</Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={[styles.billTotal, { color }]}>{fmt(b.total)}</Text>
-                      <Text style={styles.billPaid}>Paid {fmt(b.paid)}</Text>
-                      <View style={[styles.billBadge, { borderColor: color }]}>
-                        <Text style={[styles.billBadgeText, { color }]}>{b.status}</Text>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
         </>
       )}
       <View style={{ height: 32 }} />
@@ -243,25 +218,25 @@ export default function FranchiseDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container:       { flex: 1, backgroundColor: '#0F172A' },
-  franchiseName:   { color: '#F1F5F9', fontSize: 16, fontWeight: 'bold', marginTop: 12, marginHorizontal: 12 },
+  container:       { flex: 1, backgroundColor: '#F8FAFC' },
+  franchiseName:   { color: '#0F172A', fontSize: 16, fontWeight: 'bold', marginTop: 12, marginHorizontal: 12 },
   filterBar:       { flexDirection: 'row', alignItems: 'flex-end', padding: 12, paddingBottom: 8 },
   filterLabel:     { color: '#94A3B8', fontSize: 11, fontWeight: '600', marginBottom: 6 },
-  dateBtn:         { backgroundColor: '#1E293B', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#334155', justifyContent: 'center' },
-  dateBtnText:     { color: '#F1F5F9', fontSize: 12 },
+  dateBtn:         { backgroundColor: '#FFFFFF', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center' },
+  dateBtnText:     { color: '#0F172A', fontSize: 12 },
   applyBtn:        { backgroundColor: '#F97316', paddingHorizontal: 16, paddingVertical: 11, borderRadius: 8 },
   applyBtnText:    { color: '#fff', fontWeight: '700', fontSize: 13 },
   quickRow:        { flexDirection: 'row', paddingHorizontal: 12, gap: 8, marginBottom: 6 },
-  quickBtn:        { flex: 1, padding: 9, borderRadius: 10, borderWidth: 1, borderColor: '#334155', backgroundColor: '#1E293B', alignItems: 'center' },
+  quickBtn:        { flex: 1, padding: 9, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF', alignItems: 'center' },
   quickBtnActive:  { backgroundColor: '#F97316', borderColor: '#F97316' },
   quickBtnText:    { color: '#64748B', fontWeight: '600', fontSize: 12 },
   kpiGrid:         { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, gap: 10, marginTop: 10 },
-  kpiCard:         { width: '31%', backgroundColor: '#1E293B', borderRadius: 12, padding: 12, borderTopWidth: 3 },
+  kpiCard:         { width: '31%', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, borderTopWidth: 3 },
   kpiLabel:        { color: '#64748B', fontSize: 10, fontWeight: '600', marginBottom: 6 },
   kpiVal:          { fontSize: 15, fontWeight: 'bold' },
   avgBillNote:     { color: '#475569', fontSize: 11, marginHorizontal: 12, marginTop: 8 },
-  section:         { marginHorizontal: 12, marginBottom: 12, marginTop: 12, backgroundColor: '#1E293B', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#334155' },
-  sectionTitle:    { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold', marginBottom: 12 },
+  section:         { marginHorizontal: 12, marginBottom: 12, marginTop: 12, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  sectionTitle:    { color: '#0F172A', fontSize: 15, fontWeight: 'bold', marginBottom: 12 },
   barChart:        { flexDirection: 'row', alignItems: 'flex-end', height: 130, gap: 10, paddingBottom: 4 },
   barWrap:         { alignItems: 'center', width: 54 },
   bar:             { width: 32, backgroundColor: '#F59E0B', borderRadius: 4, marginBottom: 4 },
@@ -270,15 +245,15 @@ const styles = StyleSheet.create({
   barBills:        { color: '#475569', fontSize: 9 },
   methodRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   methodName:      { color: '#94A3B8', fontSize: 12, width: 56 },
-  methodBarBg:     { flex: 1, height: 8, backgroundColor: '#0F172A', borderRadius: 4, overflow: 'hidden' },
+  methodBarBg:     { flex: 1, height: 8, backgroundColor: '#F8FAFC', borderRadius: 4, overflow: 'hidden' },
   methodBarFill:   { height: 8, borderRadius: 4 },
-  methodAmt:       { color: '#F1F5F9', fontSize: 11, width: 110, textAlign: 'right' },
-  tableHeader:     { flexDirection: 'row', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#334155', marginBottom: 4 },
+  methodAmt:       { color: '#0F172A', fontSize: 11, width: 110, textAlign: 'right' },
+  tableHeader:     { flexDirection: 'row', paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', marginBottom: 4 },
   th:              { flex: 1, color: '#475569', fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
   tableRow:        { flexDirection: 'row', paddingVertical: 8, borderRadius: 6, paddingHorizontal: 4 },
   td:              { flex: 1, color: '#94A3B8', fontSize: 12 },
-  billRow:         { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#334155' },
-  billNo:          { color: '#F1F5F9', fontSize: 13, fontWeight: '700' },
+  billRow:         { flexDirection: 'row', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  billNo:          { color: '#0F172A', fontSize: 13, fontWeight: '700' },
   billPatient:     { color: '#94A3B8', fontSize: 12, marginTop: 2 },
   billMeta:        { color: '#475569', fontSize: 10, marginTop: 2 },
   billTotal:       { fontSize: 14, fontWeight: 'bold', marginBottom: 2 },

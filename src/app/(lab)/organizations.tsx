@@ -222,7 +222,7 @@ export default function Organizations() {
 
               <Text style={styles.fieldLabel}>Group</Text>
               <TouchableOpacity style={styles.input} onPress={() => setShowGroupPicker(true)}>
-                <Text style={{ color: form.org_group_id ? '#F1F5F9' : '#475569', fontSize: 14 }}>
+                <Text style={{ color: form.org_group_id ? '#0F172A' : '#475569', fontSize: 14 }}>
                   {groups.find(g => g.id === form.org_group_id)?.name ?? 'Standalone'}
                 </Text>
               </TouchableOpacity>
@@ -328,7 +328,7 @@ export default function Organizations() {
                   <View style={styles.entryForm}>
                     <Text style={styles.fieldLabel}>Type</Text>
                     <TouchableOpacity style={styles.input} onPress={() => setShowTypePicker(true)}>
-                      <Text style={{ color: '#F1F5F9', fontSize: 13 }}>{ENTRY_TYPES.find(t => t.value === entryType)?.label}</Text>
+                      <Text style={{ color: '#0F172A', fontSize: 13 }}>{ENTRY_TYPES.find(t => t.value === entryType)?.label}</Text>
                     </TouchableOpacity>
                     <Text style={styles.fieldLabel}>Amount (₹)</Text>
                     <TextInput style={styles.input} value={entryAmount} onChangeText={setEntryAmount}
@@ -419,61 +419,61 @@ export default function Organizations() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0F172A' },
+  container:      { flex: 1, backgroundColor: '#F8FAFC' },
   addBtn:         { margin: 12, marginBottom: 0, padding: 12, borderRadius: 10, backgroundColor: '#F97316', alignItems: 'center' },
   addBtnText:     { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  card:           { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#334155' },
+  card:           { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
   cardTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  name:           { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold', marginBottom: 4 },
+  name:           { color: '#0F172A', fontSize: 15, fontWeight: 'bold', marginBottom: 4 },
   groupBadge:     { backgroundColor: '#6366F122', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, alignSelf: 'flex-start' },
   groupBadgeText: { color: '#818CF8', fontSize: 10, fontWeight: '600' },
   inactiveBadge:  { backgroundColor: '#EF444422', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   inactiveText:   { color: '#EF4444', fontSize: 10, fontWeight: '700' },
   meta:           { color: '#64748B', fontSize: 12, marginTop: 3 },
-  creditRow:      { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#334155' },
+  creditRow:      { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   creditLabel:    { color: '#64748B', fontSize: 12 },
-  creditVal:      { color: '#0EA5E9', fontSize: 13, fontWeight: '700' },
+  creditVal:      { color: '#17B9A1', fontSize: 13, fontWeight: '700' },
   actionGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
-  actBtn:         { flexBasis: '48%', backgroundColor: '#0F172A', padding: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
+  actBtn:         { flexBasis: '48%', backgroundColor: '#F8FAFC', padding: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
   delActBtn:      { borderColor: '#EF444444' },
   actBtnText:     { color: '#94A3B8', fontSize: 12, fontWeight: '600' },
   empty:          { alignItems: 'center', marginTop: 60 },
   emptyIcon:      { fontSize: 48 },
   emptyText:      { color: '#475569', fontSize: 16, marginTop: 12 },
   overlay:        { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  formBox:        { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
-  modalTitle:     { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
+  formBox:        { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
+  modalTitle:     { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
   hint:           { color: '#64748B', fontSize: 12, marginBottom: 12 },
   fieldLabel:     { color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 12 },
-  input:          { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
+  input:          { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   formBtns:       { flexDirection: 'row', gap: 12, marginTop: 16 },
-  cancelBtn:      { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  cancelBtn:      { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   cancelText:     { color: '#94A3B8', fontWeight: '600' },
   saveBtn:        { flex: 1.5, padding: 14, borderRadius: 10, backgroundColor: '#F97316', alignItems: 'center' },
   saveText:       { color: '#fff', fontWeight: '700' },
-  pickerBox:      { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
-  pickerItem:     { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#334155' },
-  pickerItemSel:  { borderColor: '#0EA5E9', backgroundColor: '#0EA5E915' },
-  pickerText:     { color: '#F1F5F9', fontSize: 14 },
-  modalCancel:    { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  pickerBox:      { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  pickerItem:     { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  pickerItemSel:  { borderColor: '#17B9A1', backgroundColor: '#17B9A115' },
+  pickerText:     { color: '#0F172A', fontSize: 14 },
+  modalCancel:    { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   modalCancelText:{ color: '#EF4444', fontWeight: '700' },
-  ledgerBox:      { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28, maxHeight: '92%' },
+  ledgerBox:      { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28, maxHeight: '92%' },
   ledgerHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
-  ledgerName:     { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold' },
+  ledgerName:     { color: '#0F172A', fontSize: 18, fontWeight: 'bold' },
   ledgerSub:      { color: '#64748B', fontSize: 12, marginTop: 2 },
   closeX:         { color: '#64748B', fontSize: 22 },
   summaryRow:     { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  sumBox:         { flex: 1, backgroundColor: '#0F172A', borderRadius: 10, padding: 12, alignItems: 'center' },
+  sumBox:         { flex: 1, backgroundColor: '#F8FAFC', borderRadius: 10, padding: 12, alignItems: 'center' },
   sumLabel:       { color: '#64748B', fontSize: 10, marginBottom: 4 },
-  sumVal:         { color: '#F1F5F9', fontSize: 16, fontWeight: 'bold' },
+  sumVal:         { color: '#0F172A', fontSize: 16, fontWeight: 'bold' },
   addEntryBtn:    { backgroundColor: '#F97316', padding: 12, borderRadius: 10, alignItems: 'center', marginBottom: 14 },
   addEntryText:   { color: '#fff', fontWeight: '700' },
-  entryForm:      { backgroundColor: '#0F172A', borderRadius: 12, padding: 12, marginBottom: 14 },
+  entryForm:      { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, marginBottom: 14 },
   ledgerTitle:    { color: '#94A3B8', fontSize: 13, fontWeight: '700', marginBottom: 8 },
-  entryRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#334155' },
+  entryRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   typeBadge:      { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   typeBadgeText:  { fontSize: 10, fontWeight: '700' },
-  entryRef:       { color: '#F1F5F9', fontSize: 12, fontWeight: '600' },
+  entryRef:       { color: '#0F172A', fontSize: 12, fontWeight: '600' },
   entryDate:      { color: '#64748B', fontSize: 11, marginTop: 2 },
   entryAmt:       { fontSize: 13, fontWeight: 'bold' },
   entryBal:       { color: '#64748B', fontSize: 11, marginTop: 2 },

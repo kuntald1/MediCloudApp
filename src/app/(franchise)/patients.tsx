@@ -101,6 +101,10 @@ export default function FranchisePatients() {
   const [submittingPatient, setSubmittingPatient] = useState(false);
 
   const [form, setForm] = useState(BLANK_FORM);
+  // Inline validation message (age is the only client-side check that
+  // applies here — Branch/Franchise are always auto-set for franchise
+  // logins, so that check doesn't apply on this portal).
+  const [formError, setFormError] = useState<string | null>(null);
 
   // ── Resolve own franchise
   const fetchFranchise = useCallback(async () => {
@@ -273,6 +277,8 @@ export default function FranchisePatients() {
   // ── Register / Update Patient
   const submitPatient = async (andBill = false) => {
     if (!form.patient_name.trim()) { Alert.alert('Error', 'Patient name is required'); return; }
+    if (!form.age.trim()) { setFormError('Age is required.'); return; }
+    setFormError(null);
     setSubmittingPatient(true);
     const isEdit = editingId != null;
     try {
@@ -317,6 +323,7 @@ export default function FranchisePatients() {
   const openAddPatient = () => {
     setEditingId(null);
     setForm(BLANK_FORM);
+    setFormError(null);
     setShowAddModal(true);
   };
 
@@ -341,6 +348,7 @@ export default function FranchisePatients() {
       },
     });
     setShowActions(false);
+    setFormError(null);
     setShowAddModal(true);
   };
 
@@ -413,10 +421,10 @@ export default function FranchisePatients() {
       <Text style={styles.countText}>{filtered.length} patient{filtered.length !== 1 ? 's' : ''}</Text>
 
       {/* List */}
-      {loading ? <ActivityIndicator color="#0EA5E9" size="large" style={{ marginTop: 48 }} /> : (
+      {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (
         <FlatList data={filtered} keyExtractor={p => p.id.toString()} renderItem={renderPatient}
           contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" colors={['#0EA5E9']} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17B9A1" colors={['#17B9A1']} />}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyIcon}>🔍</Text>
@@ -473,7 +481,7 @@ export default function FranchisePatients() {
               onPress={() => selectedPatient && viewReport(selectedPatient)} disabled={reportLoading}>
               <Text style={styles.actionIcon}>📄</Text>
               <Text style={styles.actionLabel}>View / Share Report</Text>
-              {reportLoading ? <ActivityIndicator color="#0EA5E9" size="small" /> : <Text style={styles.actionArrow}>›</Text>}
+              {reportLoading ? <ActivityIndicator color="#17B9A1" size="small" /> : <Text style={styles.actionArrow}>›</Text>}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionItem}
@@ -490,17 +498,10 @@ export default function FranchisePatients() {
               <Text style={styles.actionArrow}>›</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionItem}
+            <TouchableOpacity style={[styles.actionItem, { borderBottomWidth: 0 }]}
               onPress={() => selectedPatient && openEditPatient(selectedPatient)}>
               <Text style={styles.actionIcon}>✏️</Text>
-              <Text style={[styles.actionLabel, { color: '#0EA5E9' }]}>Edit</Text>
-              <Text style={styles.actionArrow}>›</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.actionItem, { borderBottomWidth: 0 }]}
-              onPress={() => { setShowActions(false); setTimeout(() => setShowStatusModal(true), 300); }}>
-              <Text style={styles.actionIcon}>🔄</Text>
-              <Text style={[styles.actionLabel, { color: '#0EA5E9' }]}>Change Status</Text>
+              <Text style={[styles.actionLabel, { color: '#17B9A1' }]}>Edit</Text>
               <Text style={styles.actionArrow}>›</Text>
             </TouchableOpacity>
 
@@ -540,7 +541,7 @@ export default function FranchisePatients() {
                 </TouchableOpacity>
               ))}
             </View>
-            {statusLoading && <ActivityIndicator color="#0EA5E9" style={{ marginVertical: 12 }} />}
+            {statusLoading && <ActivityIndicator color="#17B9A1" style={{ marginVertical: 12 }} />}
             <TouchableOpacity style={styles.rejectBtn} onPress={rejectSample} disabled={statusLoading}>
               <Text style={styles.rejectBtnText}>⚠️  Reject Sample</Text>
             </TouchableOpacity>
@@ -573,9 +574,9 @@ export default function FranchisePatients() {
             {/* Age + Gender row */}
             <View style={styles.rowFields}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Age</Text>
+                <Text style={styles.fieldLabel}>Age *</Text>
                 <TextInput style={styles.fieldInput} value={form.age}
-                  onChangeText={v => setForm(f => ({ ...f, age: v }))}
+                  onChangeText={v => { setForm(f => ({ ...f, age: v })); if (formError) setFormError(null); }}
                   placeholder="35" placeholderTextColor="#475569" keyboardType="numeric" />
               </View>
               <View style={{ flex: 1 }}>
@@ -590,6 +591,12 @@ export default function FranchisePatients() {
                 </View>
               </View>
             </View>
+
+            {formError && (
+              <View style={styles.formErrorBox}>
+                <Text style={styles.formErrorText}>⚠️ {formError}</Text>
+              </View>
+            )}
 
             {/* Doctor */}
             <Text style={styles.fieldLabel}>Referral Doctor</Text>
@@ -617,14 +624,20 @@ export default function FranchisePatients() {
               onChangeText={v => setForm(f => ({ ...f, abha_number: v }))}
               placeholder="91-1234-5678-9012" placeholderTextColor="#475569" />
 
-            {/* Barcode */}
+            {/* Barcode — auto-generated only on new registration (matches web: HC + 5 digits);
+                shown read-only with the real value once a patient already exists */}
             <Text style={styles.fieldLabel}>
-              Barcode {editingId != null ? '(locked after registration)' : '(leave blank to auto-generate)'}
+              Barcode {editingId != null ? '(locked after registration)' : '(auto-generated · HC + 5 digits)'}
             </Text>
-            <TextInput style={[styles.fieldInput, editingId != null && { opacity: 0.5 }]} value={form.barcode}
-              editable={editingId == null}
-              onChangeText={v => setForm(f => ({ ...f, barcode: v }))}
-              placeholder="e.g. MC45265601" placeholderTextColor="#475569" />
+            {editingId != null ? (
+              <View style={[styles.fieldInput, { justifyContent: 'center', opacity: 0.5 }]}>
+                <Text style={{ color: '#0F172A', fontSize: 14 }}>{form.barcode}</Text>
+              </View>
+            ) : (
+              <View style={[styles.fieldInput, { justifyContent: 'center', opacity: 0.6 }]}>
+                <Text style={{ color: '#64748B', fontSize: 14 }}>Assigned automatically on save</Text>
+              </View>
+            )}
 
             {/* Patient History */}
             <Text style={[styles.fieldLabel, { color: '#F59E0B', marginTop: 8 }]}>Patient History</Text>
@@ -640,7 +653,7 @@ export default function FranchisePatients() {
                   <Text style={styles.checkLabel}>{label}</Text>
                   <Switch value={form.checklist[key]}
                     onValueChange={v => setForm(f => ({ ...f, checklist: { ...f.checklist, [key]: v } }))}
-                    trackColor={{ false: '#334155', true: '#F59E0B' }} thumbColor="#fff" />
+                    trackColor={{ false: '#E2E8F0', true: '#F59E0B' }} thumbColor="#fff" />
                 </View>
               ))}
             </View>
@@ -653,7 +666,7 @@ export default function FranchisePatients() {
 
             {/* Buttons */}
             {editingId != null ? (
-              <TouchableOpacity style={[styles.regBtn, { backgroundColor: '#0EA5E9', marginTop: 24 }]}
+              <TouchableOpacity style={[styles.regBtn, { backgroundColor: '#17B9A1', marginTop: 24 }]}
                 onPress={() => submitPatient(false)} disabled={submittingPatient}>
                 {submittingPatient ? <ActivityIndicator color="#fff" /> : <Text style={styles.regBtnText}>Save Changes</Text>}
               </TouchableOpacity>
@@ -728,26 +741,26 @@ export default function FranchisePatients() {
 
 // ────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: '#0F172A' },
+  container:        { flex: 1, backgroundColor: '#F8FAFC' },
   searchWrap:       { padding: 12, paddingBottom: 8 },
-  searchInput:      { backgroundColor: '#1E293B', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
+  searchInput:      { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   dateBar:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 8, gap: 6 },
   dateText:         { flex: 1, color: '#94A3B8', fontSize: 12 },
-  pill:             { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155' },
+  pill:             { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0' },
   pillActive:       { backgroundColor: '#F97316', borderColor: '#F97316' },
   pillText:         { color: '#94A3B8', fontSize: 11, fontWeight: '600' },
   countText:        { color: '#475569', fontSize: 12, paddingHorizontal: 12, marginBottom: 4 },
-  card:             { backgroundColor: '#1E293B', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#334155' },
+  card:             { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   cardRow:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   barcode:          { color: '#64748B', fontSize: 12 },
   statusBadge:      { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   statusText:       { fontSize: 11, fontWeight: '700' },
-  patientName:      { color: '#F1F5F9', fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
+  patientName:      { color: '#0F172A', fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
   metaRow:          { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginBottom: 8 },
   meta:             { color: '#64748B', fontSize: 12 },
-  dot:              { color: '#334155', fontSize: 12 },
+  dot:              { color: '#E2E8F0', fontSize: 12 },
   testsRow:         { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  testChip:         { backgroundColor: '#0F172A', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#1E40AF' },
+  testChip:         { backgroundColor: '#F8FAFC', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#1E40AF' },
   testChipText:     { color: '#60A5FA', fontSize: 11 },
   cardFooter:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   registered:       { color: '#475569', fontSize: 11 },
@@ -758,59 +771,61 @@ const styles = StyleSheet.create({
   empty:            { alignItems: 'center', marginTop: 60 },
   emptyIcon:        { fontSize: 48 },
   emptyText:        { color: '#475569', fontSize: 16, marginTop: 12 },
-  emptySubText:     { color: '#334155', fontSize: 13, marginTop: 6 },
+  emptySubText:     { color: '#E2E8F0', fontSize: 13, marginTop: 6 },
   overlay:          { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  modalBox:         { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 },
-  modalTitle:       { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  modalBox:         { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24 },
+  modalTitle:       { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
   modalLabel:       { color: '#94A3B8', fontSize: 13, marginBottom: 6 },
-  modalInput:       { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155', marginBottom: 12 },
+  modalInput:       { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 12 },
   modalBtns:        { flexDirection: 'row', gap: 12, marginTop: 4 },
-  cancelBtn:        { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  cancelBtn:        { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   cancelText:       { color: '#94A3B8', fontWeight: '600' },
   applyBtn:         { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#F97316', alignItems: 'center' },
   applyText:        { color: '#fff', fontWeight: '700' },
-  actionsSheet:     { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
+  actionsSheet:     { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
   actionsMetaRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  actionsName:      { color: '#F1F5F9', fontSize: 16, fontWeight: 'bold' },
+  actionsName:      { color: '#0F172A', fontSize: 16, fontWeight: 'bold' },
   actionsBarcode:   { color: '#64748B', fontSize: 12, marginBottom: 4 },
-  actionItem:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#334155' },
+  actionItem:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   actionIcon:       { fontSize: 20, marginRight: 14, width: 28 },
-  actionLabel:      { flex: 1, color: '#F1F5F9', fontSize: 15 },
+  actionLabel:      { flex: 1, color: '#0F172A', fontSize: 15 },
   actionArrow:      { color: '#475569', fontSize: 20 },
   deleteItem:       { paddingVertical: 14, alignItems: 'center' },
   deleteItemText:   { color: '#EF4444', fontSize: 14, fontWeight: '700' },
-  sheetCancel:      { marginTop: 4, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  sheetCancel:      { marginTop: 4, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   sheetCancelText:  { color: '#94A3B8', fontWeight: '700' },
-  statusSheet:      { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
+  statusSheet:      { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
   statusOption:     { padding: 14, borderRadius: 10, borderWidth: 1.5, alignItems: 'center' },
   statusOptionText: { fontSize: 15, fontWeight: '600' },
   rejectBtn:        { marginTop: 14, padding: 14, borderRadius: 10, backgroundColor: '#7F1D1D', borderWidth: 1, borderColor: '#EF4444', alignItems: 'center' },
   rejectBtnText:    { color: '#EF4444', fontWeight: '700', fontSize: 14 },
   // Add / Edit Patient modal
-  addModalHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#0F172A', borderBottomWidth: 1, borderBottomColor: '#1E293B', paddingTop: 50 },
+  addModalHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingTop: 50 },
   addModalClose:    { color: '#94A3B8', fontSize: 20, padding: 4 },
-  addModalTitle:    { color: '#F1F5F9', fontSize: 16, fontWeight: 'bold' },
-  addModalBody:     { flex: 1, backgroundColor: '#0F172A', padding: 16 },
+  addModalTitle:    { color: '#0F172A', fontSize: 16, fontWeight: 'bold' },
+  addModalBody:     { flex: 1, backgroundColor: '#F8FAFC', padding: 16 },
   fieldLabel:       { color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 14 },
-  fieldInput:       { backgroundColor: '#1E293B', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
-  fieldInputText:   { color: '#F1F5F9', fontSize: 14 },
+  formErrorBox:     { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 8, padding: 10, marginTop: 14 },
+  formErrorText:    { color: '#DC2626', fontSize: 12, fontWeight: '600' },
+  fieldInput:       { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  fieldInputText:   { color: '#0F172A', fontSize: 14 },
   rowFields:        { flexDirection: 'row', gap: 12 },
   genderRow:        { flexDirection: 'row', gap: 6 },
-  genderBtn:        { flex: 1, padding: 11, borderRadius: 8, borderWidth: 1, borderColor: '#334155', backgroundColor: '#1E293B', alignItems: 'center' },
+  genderBtn:        { flex: 1, padding: 11, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF', alignItems: 'center' },
   genderBtnActive:  { backgroundColor: '#F97316', borderColor: '#F97316' },
   genderText:       { color: '#94A3B8', fontWeight: '600' },
-  addDoctorBtn:     { backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155', borderRadius: 10, width: 46, alignItems: 'center', justifyContent: 'center' },
+  addDoctorBtn:     { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, width: 46, alignItems: 'center', justifyContent: 'center' },
   addDoctorBtnText: { color: '#F97316', fontSize: 22, fontWeight: 'bold' },
-  checklistCard:    { backgroundColor: '#1E293B', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#334155' },
-  checkRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#334155' },
-  checkLabel:       { color: '#F1F5F9', fontSize: 14 },
+  checklistCard:    { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  checkRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  checkLabel:       { color: '#0F172A', fontSize: 14 },
   regBtns:          { flexDirection: 'row', gap: 12, marginTop: 24 },
   regBtn:           { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center' },
   regBtnText:       { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   // Shared
-  patItem:          { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#334155' },
+  patItem:          { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
   patItemSel:       { borderColor: '#F97316', backgroundColor: '#F9731615' },
-  patName:          { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
-  modalCancel:      { marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  patName:          { color: '#0F172A', fontSize: 14, fontWeight: '600' },
+  modalCancel:      { marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   modalCancelText:  { color: '#EF4444', fontWeight: '700' },
 });

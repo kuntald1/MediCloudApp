@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList } from 'react-native';
 import { router } from 'expo-router';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { authHeader, API_BASE } from '../../../src/utils/auth';
@@ -10,6 +10,7 @@ const POLL_MS = 8000;
 
 function NotificationBell() {
   const [pending, setPending] = useState<any[]>([]);
+  const [openBell, setOpenBell] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchPending = useCallback(async () => {
@@ -26,13 +27,46 @@ function NotificationBell() {
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [fetchPending]);
 
+  // router.navigate (not push) so switching to an already-mounted Tabs
+  // screen reuses it instead of stacking a duplicate on top.
+  const goValidate = () => { setOpenBell(false); router.navigate('/(doctor)/validate' as any); };
+
   return (
-    <TouchableOpacity style={styles.bell} onPress={() => router.push('/(doctor)/validate' as any)}>
-      <Text style={styles.bellIcon}>🔔</Text>
-      {pending.length > 0 && (
-        <View style={styles.badge}><Text style={styles.badgeText}>{pending.length}</Text></View>
-      )}
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity style={styles.bell} onPress={() => { fetchPending(); setOpenBell(true); }}>
+        <Text style={styles.bellIcon}>🔔</Text>
+        {pending.length > 0 && (
+          <View style={styles.badge}><Text style={styles.badgeText}>{pending.length}</Text></View>
+        )}
+      </TouchableOpacity>
+
+      <Modal visible={openBell} transparent animationType="fade" onRequestClose={() => setOpenBell(false)}>
+        <TouchableOpacity style={styles.notifOverlay} activeOpacity={1} onPress={() => setOpenBell(false)}>
+          <View style={styles.notifCard}>
+            <Text style={styles.notifTitle}>🩺 Awaiting Validation ({pending.length})</Text>
+            <FlatList
+              data={pending}
+              keyExtractor={(it, i) => (it.id ?? i).toString()}
+              style={{ maxHeight: 340 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.notifItem} onPress={goValidate}>
+                  <Text style={styles.notifName}>{item.patient_name}</Text>
+                  <Text style={styles.notifSub}>
+                    {item.barcode}{item.accession_numbers && item.accession_numbers.length > 0 ? ` · ${item.accession_numbers.join(', ')}` : ''} · awaiting validation
+                  </Text>
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={<Text style={styles.notifEmpty}>Nothing here 🎉</Text>}
+            />
+            {pending.length > 0 && (
+              <TouchableOpacity style={styles.notifAction} onPress={goValidate}>
+                <Text style={styles.notifActionText}>Go to Report Validate →</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
   );
 }
 
@@ -40,10 +74,10 @@ export default function DoctorLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerStyle:           { backgroundColor: '#0F172A' },
-        headerTintColor:       '#F1F5F9',
+        headerStyle:           { backgroundColor: '#F8FAFC' },
+        headerTintColor:       '#0F172A',
         headerTitleStyle:      { fontWeight: 'bold' },
-        tabBarStyle:           { backgroundColor: '#0F172A', borderTopColor: '#1E293B', paddingBottom: 4 },
+        tabBarStyle:           { backgroundColor: '#F8FAFC', borderTopColor: '#E2E8F0', paddingBottom: 4 },
         tabBarActiveTintColor:   '#8B5CF6',
         tabBarInactiveTintColor: '#475569',
         headerLeft: () => (
@@ -92,4 +126,13 @@ const styles = StyleSheet.create({
   bellIcon:  { fontSize: 19 },
   badge:     { position: 'absolute', top: 0, right: 0, minWidth: 15, height: 15, borderRadius: 8, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   badgeText: { color: '#fff', fontSize: 9, fontWeight: 'bold' },
+  notifOverlay:    { flex: 1, backgroundColor: '#00000066', paddingTop: 90, paddingHorizontal: 12 },
+  notifCard:       { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#E2E8F0' },
+  notifTitle:      { color: '#0F172A', fontSize: 15, fontWeight: 'bold', marginBottom: 12 },
+  notifItem:       { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  notifName:       { color: '#0F172A', fontSize: 14, fontWeight: '600' },
+  notifSub:        { fontSize: 12, marginTop: 2, color: '#8B5CF6' },
+  notifEmpty:      { color: '#64748B', textAlign: 'center', paddingVertical: 20 },
+  notifAction:     { marginTop: 12, padding: 12, borderRadius: 10, backgroundColor: '#8B5CF6', alignItems: 'center' },
+  notifActionText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

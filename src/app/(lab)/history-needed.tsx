@@ -142,7 +142,7 @@ export default function HistoryNeeded() {
                   <View key={key} style={styles.checkRow}>
                     <Text style={styles.checkLabel}>{CHECKLIST_LABELS[key] ?? key}</Text>
                     <Switch value={!!checklist[key]} onValueChange={() => toggleCheck(key)}
-                      trackColor={{ false: '#334155', true: '#F59E0B' }} thumbColor="#fff" />
+                      trackColor={{ false: '#E2E8F0', true: '#F59E0B' }} thumbColor="#fff" />
                   </View>
                 ))}
               </View>
@@ -170,14 +170,14 @@ export default function HistoryNeeded() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0F172A' },
+  container:      { flex: 1, backgroundColor: '#F8FAFC' },
   header:         { padding: 12 },
   count:          { color: '#F59E0B', fontSize: 13, fontWeight: '600' },
-  card:           { backgroundColor: '#1E293B', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#F59E0B44' },
+  card:           { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#F59E0B44' },
   cardRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   barcode:        { color: '#64748B', fontSize: 12 },
   status:         { color: '#F97316', fontSize: 11, fontWeight: '600' },
-  name:           { color: '#F1F5F9', fontSize: 16, fontWeight: 'bold', marginBottom: 2 },
+  name:           { color: '#0F172A', fontSize: 16, fontWeight: 'bold', marginBottom: 2 },
   meta:           { color: '#64748B', fontSize: 12, marginBottom: 6 },
   docNote:        { color: '#F59E0B', fontSize: 13, marginBottom: 6 },
   askedRow:       { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 10 },
@@ -190,19 +190,19 @@ const styles = StyleSheet.create({
   emptyIcon:      { fontSize: 48 },
   emptyText:      { color: '#475569', fontSize: 16, marginTop: 12 },
   overlay:        { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  modalBox:       { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
-  modalTitle:     { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
-  modalName:      { color: '#F1F5F9', fontSize: 15, fontWeight: '600' },
+  modalBox:       { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 24, paddingBottom: 32 },
+  modalTitle:     { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
+  modalName:      { color: '#0F172A', fontSize: 15, fontWeight: '600' },
   modalBarcode:   { color: '#64748B', fontSize: 12, marginBottom: 10 },
   docRequestBox:  { backgroundColor: '#F59E0B22', borderRadius: 8, padding: 10, marginBottom: 12 },
   docRequestText: { color: '#F59E0B', fontSize: 13 },
   sectionLabel:   { color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 8 },
-  checklistCard:  { backgroundColor: '#0F172A', borderRadius: 12, padding: 12 },
-  checkRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#1E293B' },
-  checkLabel:     { color: '#F1F5F9', fontSize: 14 },
-  input:          { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
+  checklistCard:  { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12 },
+  checkRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  checkLabel:     { color: '#0F172A', fontSize: 14 },
+  input:          { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   btnRow:         { flexDirection: 'row', gap: 12, marginTop: 16 },
-  cancelBtn:      { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  cancelBtn:      { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   cancelText:     { color: '#94A3B8', fontWeight: '600' },
   submitBtn:      { flex: 1.5, padding: 14, borderRadius: 10, backgroundColor: '#F59E0B', alignItems: 'center' },
   submitText:     { color: '#000', fontWeight: '700' },

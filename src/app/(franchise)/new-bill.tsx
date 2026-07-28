@@ -8,13 +8,94 @@ import { authHeader, API_BASE, getUser, getToken } from '../../../src/utils/auth
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
+import * as Print from 'expo-print';
+import bwipjs from '@bwip-js/react-native';
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 interface Patient   { id: number; barcode: string; patient_name: string; organization_id: number | null; phone: string | null; }
-interface Test      { id: number; name: string; price: number; mrp: number; sample_type: string; }
+interface Test      { id: number; name: string; price: number; mrp: number; sample_type: string; sample_tube_id?: number | null; }
 interface TestGroup { id: number; name: string; price: number; tests: { id: number; name: string }[]; test_ids?: number[]; }
 interface Org       { id: number; name: string; }
+interface Tube      { id: number; name: string; color: string; }
+
+const TUBE_COLOR_MAP: Record<string, string> = {
+  lavender: '#C4B5FD', yellow: '#FDE047', red: '#EF4444', blue: '#3B82F6',
+  green: '#22C55E', purple: '#A855F7', gray: '#9CA3AF', grey: '#9CA3AF',
+  pink: '#F472B6', orange: '#FB923C', black: '#1F2937',
+};
+const tubeDotColor = (name?: string) => {
+  if (!name) return '#64748B';
+  const trimmed = name.trim();
+  if (trimmed.startsWith('#')) return trimmed; // backend already gave a hex color
+  return TUBE_COLOR_MAP[trimmed.toLowerCase()] ?? '#64748B';
+};
+
+// ── Sample-label printing (client-side, no backend endpoint needed — the
+// patient name, test name, and accession code are all already in app state).
+// Each barcode is pre-rendered to a PNG data URL via @bwip-js/react-native
+// (runs in the RN JS engine, no DOM needed) and embedded as a plain <img>,
+// so the static HTML handed to expo-print needs no script execution at all
+// — the native print renderer only paints static markup, it doesn't run JS.
+interface LabelItem { patientName: string; testName: string; accession: string; }
+
+async function renderBarcodeDataUri(text: string): Promise<string> {
+  const result = await bwipjs.toDataURL({
+    bcid: 'code128',
+    text,
+    scale: 3,
+    height: 10,
+    includetext: false,
+  });
+  return result.uri;
+}
+
+async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
+  const withBarcodes = await Promise.all(items.map(async (it) => ({
+    ...it,
+    barcodeUri: await renderBarcodeDataUri(it.accession),
+  })));
+
+  const labelBlocks = withBarcodes.map((it) => `
+    <div class="label">
+      <div class="patient">${escapeHtml(it.patientName)}</div>
+      <div class="test">${escapeHtml(it.testName)}</div>
+      <img class="barcode" src="${it.barcodeUri}" />
+      <div class="code">${escapeHtml(it.accession)}</div>
+    </div>
+  `).join('');
+
+  return `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <style>
+        body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 16px; }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
+        .label {
+          text-align: center; padding: 20px 12px; border: 1px dashed #E2E8F0;
+          break-inside: avoid; page-break-inside: avoid;
+        }
+        .patient { font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
+        .test { font-size: 12px; font-weight: 600; color: #17B9A1; margin-bottom: 10px; }
+        .barcode { display: block; margin: 0 auto; max-width: 90%; }
+        .code { font-size: 11px; color: #0F172A; margin-top: 4px; letter-spacing: 0.5px; }
+      </style>
+    </head>
+    <body>
+      <div class="grid">
+        ${labelBlocks}
+      </div>
+    </body>
+  </html>`;
+}
+
+function escapeHtml(s: string): string {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+  ));
+}
 
 export default function NewBill() {
   const currentUser   = getUser();
@@ -28,7 +109,17 @@ export default function NewBill() {
   const [tests, setTests]         = useState<Test[]>([]);
   const [groups, setGroups]       = useState<TestGroup[]>([]);
   const [orgs, setOrgs]           = useState<Org[]>([]);
+  const [tubes, setTubes]         = useState<Tube[]>([]);
   const [loading, setLoading]     = useState(true);
+
+  // Effective per-org pricing (Group/Org Pricing overrides) — keyed by test_id
+  const [effectivePrices, setEffectivePrices] = useState<Record<number, { price: number; mrp: number; source: string }>>({});
+  const [effectiveGroupPrices, setEffectiveGroupPrices] = useState<Record<number, { price: number; mrp: number; source: string }>>({});
+  // Per-test accession numbers — keyed by test_id, editable
+  const [accessions, setAccessions] = useState<Record<number, string>>({});
+  const [touchedAccessionIds, setTouchedAccessionIds] = useState<Set<number>>(new Set());
+  const [accessionsLoading, setAccessionsLoading] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   const [patientId, setPatientId]       = useState<number | null>(null);
   const [pickedTests, setPickedTests]   = useState<Record<number,{name:string;price:number}>>({});
@@ -61,16 +152,18 @@ export default function NewBill() {
   const loadData = useCallback(async () => {
     try {
       const h = authHeader();
-      const [p, t, g, o] = await Promise.all([
+      const [p, t, g, o, tb] = await Promise.all([
         fetch(`${API_BASE}/api/patients/`,         { headers: h }).then(r => r.ok ? r.json() : []),
         fetch(`${API_BASE}/api/b2b/tests`,          { headers: h }).then(r => r.ok ? r.json() : []),
         fetch(`${API_BASE}/api/b2b/test-groups`,    { headers: h }).then(r => r.ok ? r.json() : []),
         fetch(`${API_BASE}/api/b2b/organizations`,  { headers: h }).then(r => r.ok ? r.json() : []),
+        fetch(`${API_BASE}/api/b2b/tubes`,          { headers: h }).then(r => r.ok ? r.json() : []),
       ]);
       setPatients(Array.isArray(p) ? p : []);
       setTests(Array.isArray(t) ? t : []);
       setGroups(Array.isArray(g) ? g : []);
       setOrgs(Array.isArray(o) ? o : []);
+      setTubes(Array.isArray(tb) ? tb : []);
     } catch {
       // silent — keep whatever was already loaded
     } finally {
@@ -97,12 +190,22 @@ export default function NewBill() {
   const patient  = patients.find(p => p.id === patientId) ?? null;
   const orgId    = patient?.organization_id ?? null;
   const orgName  = orgs.find(o => o.id === orgId)?.name ?? 'Direct / Walk-in';
+  const tubeMap  = new Map(tubes.map(tb => [tb.id, tb]));
+  const testById = new Map(tests.map(t => [t.id, t]));
 
   const groupMemberIds = new Set(
     Object.values(pickedGroups).flatMap(g => (g.test_ids ?? g.tests.map(t => t.id)))
   );
-  const groupSubtotal = Object.values(pickedGroups).reduce((s, g) => s + (g.price || 0), 0);
-  const testSubtotal  = Object.values(pickedTests).reduce((s, t) => s + (t.price || 0), 0);
+  // Every individual test in the current bill — standalone picks + every member of every picked group.
+  const allIndividualTestIds = Array.from(new Set([
+    ...Object.keys(pickedTests).map(Number),
+    ...groupMemberIds,
+  ]));
+
+  const groupSubtotal = Object.values(pickedGroups).reduce((s, g) => s + (effectiveGroupPrices[g.id]?.price ?? g.price ?? 0), 0);
+  const testSubtotal  = Object.entries(pickedTests).reduce(
+    (s, [tid, t]) => s + (effectivePrices[Number(tid)]?.price ?? t.price ?? 0), 0
+  );
   const subtotal      = groupSubtotal + testSubtotal;
 
   const discAmount = (() => {
@@ -132,6 +235,117 @@ export default function NewBill() {
       setPickedTests(prev => ({ ...prev, [t.id]: { name: t.name, price: t.price } }));
     }
   };
+
+  // ── Resolve effective pricing — applies Group/Org Pricing overrides.
+  // Franchise users always see their org's contracted price everywhere,
+  // including the test-browsing list before anything is picked, so the
+  // whole catalog is resolved as soon as the org is known. Lab admins bill
+  // many different orgs from one screen, so for them only the tests already
+  // added to the current bill get resolved (shown in Bill Items, not the
+  // browsing list) — same as before.
+  const standaloneIdsKey = Object.keys(pickedTests).sort().join(',');
+  const catalogIdsKey = tests.map(t => t.id).sort((a, b) => a - b).join(',');
+  const pricingIdsKey = isFranchise ? catalogIdsKey : standaloneIdsKey;
+  useEffect(() => {
+    const ids = isFranchise ? tests.map(t => t.id) : Object.keys(pickedTests).map(Number);
+    if (!orgId || ids.length === 0) { setEffectivePrices({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('organization_id', String(orgId));
+        params.set('test_ids', ids.join(','));
+        const res = await fetch(`${API_BASE}/api/billing/resolve?${params.toString()}`, { headers: authHeader() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data)) return;
+        const map: Record<number, { price: number; mrp: number; source: string }> = {};
+        data.forEach((r: any) => { map[r.test_id] = { price: r.price, mrp: r.mrp, source: r.source }; });
+        setEffectivePrices(map);
+      } catch { /* keep base prices on failure */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, pricingIdsKey, isFranchise]);
+
+  // ── Resolve effective pricing for TEST GROUPS (panels) — mirrors the
+  // individual-test resolver above via GET /billing/resolve-groups. Franchise
+  // users get the whole group catalog resolved up front (same as tests);
+  // lab admins only resolve groups already added to the current bill.
+  const pickedGroupIdsKey = Object.keys(pickedGroups).sort().join(',');
+  const groupCatalogIdsKey = groups.map(g => g.id).sort((a, b) => a - b).join(',');
+  const groupPricingIdsKey = isFranchise ? groupCatalogIdsKey : pickedGroupIdsKey;
+  useEffect(() => {
+    const ids = isFranchise ? groups.map(g => g.id) : Object.keys(pickedGroups).map(Number);
+    if (!orgId || ids.length === 0) { setEffectiveGroupPrices({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('organization_id', String(orgId));
+        params.set('group_ids', ids.join(','));
+        const res = await fetch(`${API_BASE}/api/billing/resolve-groups?${params.toString()}`, { headers: authHeader() });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !Array.isArray(data)) return;
+        const map: Record<number, { price: number; mrp: number; source: string }> = {};
+        data.forEach((r: any) => { map[r.group_id] = { price: r.price, mrp: r.mrp, source: r.source }; });
+        setEffectiveGroupPrices(map);
+      } catch { /* keep base prices on failure */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, groupPricingIdsKey, isFranchise]);
+
+  // ── Auto-generate per-test accession numbers (barcode + suffix letter) for
+  // every individual test in the bill — standalone tests and every group
+  // member. Always re-fetches ONE fresh, fully-sequential batch sized to the
+  // current total test count (next-accessions has no memory of earlier
+  // suggestions until a bill is actually saved, so incremental per-test calls
+  // would each restart at "A" — this is why it must be a single combined call).
+  // Values the person has manually typed are tracked separately and never
+  // overwritten by a re-fetch.
+  const orderedIndividualIds = [
+    ...Object.values(pickedGroups).flatMap(g => g.test_ids ?? g.tests.map(mt => mt.id)),
+    ...Object.keys(pickedTests).map(Number),
+  ];
+  const allIdsKey = allIndividualTestIds.slice().sort((a, b) => a - b).join(',');
+  useEffect(() => {
+    if (!patient?.barcode || orderedIndividualIds.length === 0) {
+      if (orderedIndividualIds.length === 0) { setAccessions({}); setTouchedAccessionIds(new Set()); }
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setAccessionsLoading(true);
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/billing/next-accessions?barcode=${encodeURIComponent(patient.barcode)}&count=${orderedIndividualIds.length}`,
+          { headers: authHeader() }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const codes: string[] = Array.isArray(data?.accessions) ? data.accessions : [];
+        if (cancelled) return;
+        setAccessions(prev => {
+          const next: Record<number, string> = {};
+          let codeIdx = 0;
+          orderedIndividualIds.forEach(id => {
+            if (touchedAccessionIds.has(id) && prev[id]) {
+              next[id] = prev[id]; // keep the person's manual edit as-is
+            } else if (codes[codeIdx]) {
+              next[id] = codes[codeIdx];
+              codeIdx += 1;
+            }
+          });
+          return next;
+        });
+      } catch { /* leave those tests without a suggested code — still editable manually */ }
+      finally { if (!cancelled) setAccessionsLoading(false); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patient?.barcode, allIdsKey]);
 
   // Refresh bill from API
   const refreshBill = useCallback(async (id: number) => {
@@ -268,6 +482,25 @@ export default function NewBill() {
     if (!patientId) { Alert.alert('Error', 'Select a patient'); return; }
     const hasItems = Object.keys(pickedTests).length > 0 || Object.keys(pickedGroups).length > 0;
     if (!hasItems) { Alert.alert('Error', 'Add at least one test'); return; }
+
+    // Client-side duplicate-accession check — mirrors the backend's own validation
+    // so the person gets the same clear message without a round trip.
+    const seen: Record<string, number> = {};
+    for (const id of allIndividualTestIds) {
+      const code = (accessions[id] ?? '').trim();
+      if (!code) {
+        const name = testById.get(id)?.name ?? 'this test';
+        Alert.alert('Missing accession number', `Please enter an accession number for ${name}.`);
+        return;
+      }
+      if (seen[code] !== undefined) {
+        const name = testById.get(id)?.name ?? 'this test';
+        Alert.alert('Duplicate accession number', `Accession number '${code}' is already in use — please choose a different one for ${name}.`);
+        return;
+      }
+      seen[code] = id;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -278,6 +511,7 @@ export default function NewBill() {
         discount_type:  allowDiscount ? (discType || null) : null,
         discount_value: allowDiscount ? (Number(discVal) || 0) : 0,
         on_credit: isFranchise ? !!orgId : (onCredit && !!orgId),
+        accessions: Object.fromEntries(allIndividualTestIds.map(id => [String(id), (accessions[id] ?? '').trim()])),
       };
       const res = await fetch(`${API_BASE}/api/billing/bills`, {
         method: 'POST',
@@ -288,6 +522,7 @@ export default function NewBill() {
       if (!res.ok) throw new Error(data.detail ?? JSON.stringify(data));
       setLastBill(data);
       setPickedTests({}); setPickedGroups({}); setDiscType(''); setDiscVal('');
+      setAccessions({}); setEffectivePrices({}); setTouchedAccessionIds(new Set());
       setWaPhone(patient?.phone ?? '');
       Alert.alert('✅ Bill Created', `${data.bill_no}  ·  ${inr(data.total)}`);
     } catch (e: any) { Alert.alert('Error', e.message); }
@@ -298,6 +533,39 @@ export default function NewBill() {
     setPatientId(null); setPickedTests({}); setPickedGroups({});
     setDiscType(''); setDiscVal(''); setOnCredit(isFranchise);
     setLastBill(null); setWaPhone(''); stopWaiting();
+    setAccessions({}); setEffectivePrices({}); setTouchedAccessionIds(new Set());
+  };
+
+  // Print a single sample's barcode label
+  const printOneSample = async (testId: number, testName: string) => {
+    const code = accessions[testId];
+    if (!code) { Alert.alert('No accession number yet', `Enter or wait for an accession number for ${testName} before printing.`); return; }
+    setPrinting(true);
+    try {
+      const html = await buildLabelsHtml([{ patientName: patient?.patient_name ?? 'Patient', testName, accession: code }]);
+      await Print.printAsync({ html });
+    } catch (e: any) {
+      Alert.alert('Print failed', e.message ?? 'Could not generate the barcode label');
+    } finally { setPrinting(false); }
+  };
+
+  // Print every sample label in the current bill in one go
+  const printAllSamples = async () => {
+    const items: LabelItem[] = orderedIndividualIds
+      .filter(id => accessions[id])
+      .map(id => ({
+        patientName: patient?.patient_name ?? 'Patient',
+        testName: testById.get(id)?.name ?? 'Test',
+        accession: accessions[id],
+      }));
+    if (items.length === 0) { Alert.alert('Nothing to print', 'Add tests and wait for accession numbers to be generated first.'); return; }
+    setPrinting(true);
+    try {
+      const html = await buildLabelsHtml(items);
+      await Print.printAsync({ html });
+    } catch (e: any) {
+      Alert.alert('Print failed', e.message ?? 'Could not generate the barcode labels');
+    } finally { setPrinting(false); }
   };
 
   const filteredPats   = patients.filter(p =>
@@ -312,7 +580,7 @@ export default function NewBill() {
 
   if (loading) return (
     <View style={styles.loading}>
-      <ActivityIndicator color="#0EA5E9" size="large" />
+      <ActivityIndicator color="#17B9A1" size="large" />
       <Text style={styles.loadingText}>Loading...</Text>
     </View>
   );
@@ -321,8 +589,11 @@ export default function NewBill() {
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
 
       {/* PATIENT */}
-      <View style={styles.section}>
-        <Text style={styles.sLabel}>PATIENT</Text>
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionHeaderIcon}>🧑‍⚕️</Text>
+          <Text style={styles.sLabel}>PATIENT</Text>
+        </View>
         <TouchableOpacity style={styles.selector} onPress={() => setShowPatientModal(true)}>
           <Text style={patient ? styles.selVal : styles.selPh} numberOfLines={1}>
             {patient ? `${patient.patient_name}  ·  ${patient.barcode}` : 'Select patient...'}
@@ -339,14 +610,21 @@ export default function NewBill() {
       {/* TESTS */}
       {patientId && (
         <>
-          <View style={styles.section}>
-            <Text style={styles.sLabel}>ADD TESTS</Text>
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionHeaderIcon}>🧪</Text>
+              <Text style={styles.sLabel}>ADD TESTS</Text>
+            </View>
             <TextInput style={styles.searchInput} value={testSearch} onChangeText={setTestSearch}
               placeholder="🔍  Search tests or groups..." placeholderTextColor="#475569" />
             {filteredGroups.length > 0 && <>
-              <Text style={styles.subLabel}>TEST GROUPS</Text>
+              <View style={styles.subSectionHeader}>
+                <Text style={styles.subLabel}>TEST GROUPS</Text>
+              </View>
               {filteredGroups.map(g => {
                 const sel = !!pickedGroups[g.id];
+                const groupListPrice = effectiveGroupPrices[g.id]?.price ?? g.price;
+                const groupListOverridden = effectiveGroupPrices[g.id]?.source === 'group' || effectiveGroupPrices[g.id]?.source === 'organization';
                 return (
                   <TouchableOpacity key={g.id} style={[styles.testItem, sel && styles.testItemSel]} onPress={() => toggleGroup(g)}>
                     <View style={{ flex: 1 }}>
@@ -354,7 +632,8 @@ export default function NewBill() {
                       <Text style={styles.testSub}>{g.tests.map(t => t.name).join(' · ')}</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.testPrice}>{inr(g.price)}</Text>
+                      <Text style={styles.testPrice}>{inr(groupListPrice)}</Text>
+                      {groupListOverridden && <Text style={styles.overriddenTag}>org price</Text>}
                       {sel && <Text style={styles.addedBadge}>✓ added</Text>}
                     </View>
                   </TouchableOpacity>
@@ -362,9 +641,14 @@ export default function NewBill() {
               })}
             </>}
             {filteredTests.length > 0 && <>
-              <Text style={[styles.subLabel, { marginTop: 10 }]}>INDIVIDUAL TESTS</Text>
+              <View style={[styles.subSectionHeader, { marginTop: 14 }]}>
+                <Text style={styles.subLabel}>INDIVIDUAL TESTS</Text>
+              </View>
               {filteredTests.map(t => {
                 const sel = !!pickedTests[t.id]; const inGrp = groupMemberIds.has(t.id);
+                const memberOfGroups = groups.filter(g => (g.test_ids ?? g.tests.map(mt => mt.id)).includes(t.id)).map(g => g.name);
+                const listPrice = effectivePrices[t.id]?.price ?? t.price;
+                const listOverridden = effectivePrices[t.id]?.source === 'group' || effectivePrices[t.id]?.source === 'organization';
                 return (
                   <TouchableOpacity key={t.id}
                     style={[styles.testItem, sel && styles.testItemSel, inGrp && { opacity: 0.45 }]}
@@ -372,9 +656,15 @@ export default function NewBill() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.testName}>{t.name}</Text>
                       <Text style={styles.testSub}>{t.sample_type}</Text>
+                      {memberOfGroups.length > 0 && (
+                        <View style={styles.partOfGroupChip}>
+                          <Text style={styles.partOfGroupChipText}>📦 part of: {memberOfGroups.join(', ')}</Text>
+                        </View>
+                      )}
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.testPrice}>{inr(t.price)}</Text>
+                      <Text style={styles.testPrice}>{inr(listPrice)}</Text>
+                      {listOverridden && <Text style={styles.overriddenTag}>org price</Text>}
                       {inGrp && <Text style={styles.inGrpBadge}>in group</Text>}
                       {sel && !inGrp && <Text style={styles.addedBadge}>✓ added</Text>}
                     </View>
@@ -387,23 +677,107 @@ export default function NewBill() {
           {/* BILL SUMMARY */}
           {hasItems && (
             <View style={styles.section}>
-              <Text style={styles.sLabel}>BILL ITEMS</Text>
+              <View style={styles.billItemsHeaderRow}>
+                <Text style={styles.sLabel}>BILL ITEMS</Text>
+                <TouchableOpacity style={styles.printAllBtn} onPress={printAllSamples} disabled={printing}>
+                  {printing ? <ActivityIndicator color="#17B9A1" size="small" /> : <Text style={styles.printAllBtnText}>🖨  Print All Samples</Text>}
+                </TouchableOpacity>
+              </View>
+              {accessionsLoading && (
+                <View style={styles.accGenRow}>
+                  <ActivityIndicator color="#17B9A1" size="small" />
+                  <Text style={styles.accGenText}>Generating accession numbers...</Text>
+                </View>
+              )}
               <View style={styles.billCard}>
-                {Object.entries(pickedGroups).map(([gid, g]) => (
-                  <View key={gid} style={styles.billRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.billName}>{g.name} <Text style={styles.grpTag}>GROUP</Text></Text>
-                      <Text style={styles.billSub}>{g.tests.map(t => t.name).join(' · ')}</Text>
+                {Object.entries(pickedGroups).map(([gid, g]) => {
+                  const memberIds = g.test_ids ?? g.tests.map(mt => mt.id);
+                  const groupBillPrice = effectiveGroupPrices[g.id]?.price ?? g.price;
+                  const groupBillOverridden = effectiveGroupPrices[g.id]?.source === 'group' || effectiveGroupPrices[g.id]?.source === 'organization';
+                  return (
+                    <View key={gid} style={styles.groupWrap}>
+                      <View style={styles.groupHeaderRow}>
+                        <Text style={styles.groupHeaderName}>{g.name}</Text>
+                        <View style={styles.grpTagBadge}><Text style={styles.grpTagBadgeText}>GROUP</Text></View>
+                        <View style={{ flex: 1 }} />
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={styles.billPrice}>{inr(groupBillPrice)}</Text>
+                          {groupBillOverridden && <Text style={styles.overriddenTag}>org price</Text>}
+                        </View>
+                      </View>
+                      {memberIds.map(mid => {
+                        const memberTest = testById.get(mid);
+                        const tube = memberTest?.sample_tube_id != null ? tubeMap.get(memberTest.sample_tube_id) : null;
+                        const memberName = memberTest?.name ?? g.tests.find(mt => mt.id === mid)?.name ?? `Test #${mid}`;
+                        return (
+                          <View key={mid} style={styles.memberRow}>
+                            <View style={styles.memberConnector} />
+                            <View style={{ flex: 1 }}>
+                              <View style={styles.memberTopLine}>
+                                <Text style={styles.memberName} numberOfLines={1}>{memberName}</Text>
+                                {tube && (
+                                  <View style={styles.tubeChip}>
+                                    <View style={[styles.tubeDot, { backgroundColor: tubeDotColor(tube.color) }]} />
+                                    <Text style={styles.tubeChipText}>{tube.name}</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <View style={styles.accRow}>
+                                <TextInput
+                                  style={styles.accInputCompact}
+                                  value={accessions[mid] ?? ''}
+                                  onChangeText={v => { setAccessions(prev => ({ ...prev, [mid]: v.toUpperCase() })); setTouchedAccessionIds(prev => new Set(prev).add(mid)); }}
+                                  placeholder="Accession no." placeholderTextColor="#94A3B8"
+                                  autoCapitalize="characters"
+                                />
+                                <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(mid, memberName)} disabled={printing}>
+                                  <Text style={styles.printOneBtnIcon}>🖨</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      })}
                     </View>
-                    <Text style={styles.billPrice}>{inr(g.price)}</Text>
-                  </View>
-                ))}
-                {Object.entries(pickedTests).map(([tid, t]) => (
-                  <View key={tid} style={styles.billRow}>
-                    <Text style={[styles.billName, { flex: 1 }]}>{t.name}</Text>
-                    <Text style={styles.billPrice}>{inr(t.price)}</Text>
-                  </View>
-                ))}
+                  );
+                })}
+                {Object.entries(pickedTests).map(([tid, t]) => {
+                  const id = Number(tid);
+                  const fullTest = testById.get(id);
+                  const tube = fullTest?.sample_tube_id != null ? tubeMap.get(fullTest.sample_tube_id) : null;
+                  const price = effectivePrices[id]?.price ?? t.price;
+                  const overridden = effectivePrices[id]?.source === 'group' || effectivePrices[id]?.source === 'organization';
+                  return (
+                    <View key={tid} style={styles.standaloneWrap}>
+                      <View style={styles.memberTopLine}>
+                        <Text style={styles.standaloneName} numberOfLines={1}>{t.name}</Text>
+                        {tube && (
+                          <View style={styles.tubeChip}>
+                            <View style={[styles.tubeDot, { backgroundColor: tubeDotColor(tube.color) }]} />
+                            <Text style={styles.tubeChipText}>{tube.name}</Text>
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }} />
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={styles.billPrice}>{inr(price)}</Text>
+                          {overridden && <Text style={styles.overriddenTag}>group price</Text>}
+                        </View>
+                      </View>
+                      <View style={styles.accRow}>
+                        <TextInput
+                          style={styles.accInputCompact}
+                          value={accessions[id] ?? ''}
+                          onChangeText={v => { setAccessions(prev => ({ ...prev, [id]: v.toUpperCase() })); setTouchedAccessionIds(prev => new Set(prev).add(id)); }}
+                          placeholder="Accession no." placeholderTextColor="#94A3B8"
+                          autoCapitalize="characters"
+                        />
+                        <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(id, t.name)} disabled={printing}>
+                          <Text style={styles.printOneBtnIcon}>🖨</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
                 <View style={styles.divider} />
 
                 {/* Discount — lab admin only */}
@@ -429,7 +803,7 @@ export default function NewBill() {
                 <View style={styles.totalRow}><Text style={styles.totalLbl}>Subtotal</Text><Text style={styles.totalVal}>{inr(subtotal)}</Text></View>
                 {discAmount > 0 && <View style={styles.totalRow}><Text style={styles.totalLbl}>Discount</Text><Text style={[styles.totalVal, { color: '#EF4444' }]}>– {inr(discAmount)}</Text></View>}
                 <View style={[styles.totalRow, { marginTop: 4 }]}>
-                  <Text style={[styles.totalLbl, { fontSize: 16, color: '#F1F5F9', fontWeight: 'bold' }]}>Total</Text>
+                  <Text style={[styles.totalLbl, { fontSize: 16, color: '#0F172A', fontWeight: 'bold' }]}>Total</Text>
                   <Text style={[styles.totalVal, { fontSize: 20, color: '#10B981' }]}>{inr(total)}</Text>
                 </View>
 
@@ -445,7 +819,7 @@ export default function NewBill() {
                     <Switch value={isFranchise ? true : onCredit}
                       onValueChange={isFranchise ? undefined : setOnCredit}
                       disabled={isFranchise}
-                      trackColor={{ false: '#334155', true: '#0EA5E9' }} thumbColor="#fff" />
+                      trackColor={{ false: '#E2E8F0', true: '#17B9A1' }} thumbColor="#fff" />
                   </View>
                 )}
 
@@ -469,7 +843,7 @@ export default function NewBill() {
                 <Text style={{ color: '#64748B', fontSize: 12 }}>{lastBill.patient_name} · {lastBill.items?.length ?? 0} test(s)</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
-                <Text style={{ color: '#F1F5F9', fontSize: 18, fontWeight: 'bold' }}>{inr(lastBill.total)}</Text>
+                <Text style={{ color: '#0F172A', fontSize: 18, fontWeight: 'bold' }}>{inr(lastBill.total)}</Text>
                 {!isPaid && <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '600' }}>Due {inr(due)}</Text>}
               </View>
             </View>
@@ -550,9 +924,9 @@ export default function NewBill() {
 
             {/* Receipt button — always available */}
             {!isPaid && (
-              <TouchableOpacity style={[styles.payBtn, { backgroundColor: '#334155', marginTop: 12 }]}
+              <TouchableOpacity style={[styles.payBtn, styles.payBtnOutline, { marginTop: 12 }]}
                 onPress={() => openReceipt(lastBill.id, lastBill.bill_no)}>
-                <Text style={styles.payBtnText}>⬇ Open Receipt PDF</Text>
+                <Text style={styles.payBtnOutlineText}>⬇ Open Receipt PDF</Text>
               </TouchableOpacity>
             )}
 
@@ -571,10 +945,10 @@ export default function NewBill() {
             <Text style={styles.modalTitle}>Select Patient</Text>
             <TextInput style={styles.modalSearch} value={patientSearch} onChangeText={setPatientSearch}
               placeholder="Search..." placeholderTextColor="#475569" autoFocus />
-            <ScrollView style={{ maxHeight: 420 }}>
+            <ScrollView style={{ maxHeight: 360 }}>
               {filteredPats.map(p => (
                 <TouchableOpacity key={p.id} style={[styles.patItem, patientId === p.id && styles.patItemSel]}
-                  onPress={() => { setPatientId(p.id); setPickedTests({}); setPickedGroups({}); setShowPatientModal(false); setPatientSearch(''); }}>
+                  onPress={() => { setPatientId(p.id); setPickedTests({}); setPickedGroups({}); setAccessions({}); setEffectivePrices({}); setTouchedAccessionIds(new Set()); setShowPatientModal(false); setPatientSearch(''); }}>
                   <Text style={styles.patName}>{p.patient_name}</Text>
                   <Text style={styles.patBarcode}>{p.barcode}</Text>
                 </TouchableOpacity>
@@ -609,68 +983,116 @@ export default function NewBill() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0F172A' },
-  loading:        { flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' },
+  container:      { flex: 1, backgroundColor: '#F8FAFC' },
+  loading:        { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
   loadingText:    { color: '#64748B', marginTop: 12 },
   section:        { margin: 12, marginBottom: 8 },
-  sLabel:         { color: '#475569', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
-  subLabel:       { color: '#334155', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
-  selector:       { backgroundColor: '#1E293B', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: '#334155', flexDirection: 'row', alignItems: 'center' },
-  selVal:         { flex: 1, color: '#F1F5F9', fontSize: 14 },
+  sectionCard:    {
+    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginHorizontal: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: '#E2E8F0',
+    shadowColor: '#0F172A', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 1,
+  },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  sectionHeaderIcon: { fontSize: 15, marginRight: 7 },
+  sLabel:         { color: '#17B9A1', fontSize: 12, fontWeight: '800', letterSpacing: 0.8 },
+  subSectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 10 },
+  subLabel:       { color: '#6366f1', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8, backgroundColor: '#6366F112', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  selector:       { backgroundColor: '#F8FAFC', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center' },
+  selVal:         { flex: 1, color: '#0F172A', fontSize: 14 },
   selPh:          { flex: 1, color: '#475569', fontSize: 14 },
   arrow:          { color: '#475569' },
   billingTo:      { fontSize: 13, fontWeight: '600', marginTop: 6 },
-  searchInput:    { backgroundColor: '#1E293B', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155', marginBottom: 10 },
-  testItem:       { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#334155', marginBottom: 6, backgroundColor: '#1E293B' },
-  testItemSel:    { borderColor: '#0EA5E9', backgroundColor: '#0EA5E915' },
-  testName:       { color: '#F1F5F9', fontSize: 14, fontWeight: '500' },
+  searchInput:    { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },
+  testItem:       { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 6, backgroundColor: '#FFFFFF' },
+  testItemSel:    { borderColor: '#17B9A1', backgroundColor: '#17B9A115' },
+  testName:       { color: '#0F172A', fontSize: 14, fontWeight: '500' },
   testSub:        { color: '#475569', fontSize: 11, marginTop: 2 },
   testPrice:      { color: '#10B981', fontSize: 14, fontWeight: '700' },
   addedBadge:     { color: '#10B981', fontSize: 10, marginTop: 2 },
   inGrpBadge:     { color: '#475569', fontSize: 10, marginTop: 2 },
-  billCard:       { backgroundColor: '#1E293B', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#334155' },
-  billRow:        { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#334155' },
-  billName:       { color: '#F1F5F9', fontSize: 14 },
+  partOfGroupChip:     { marginTop: 4, alignSelf: 'flex-start', backgroundColor: '#6366F112', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  partOfGroupChipText: { color: '#6366f1', fontSize: 10, fontWeight: '600' },
+  billCard:       { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  billRow:        { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  billName:       { color: '#0F172A', fontSize: 14 },
   grpTag:         { color: '#6366f1', fontSize: 10, fontWeight: '700' },
   billSub:        { color: '#475569', fontSize: 11, marginTop: 2 },
-  billPrice:      { color: '#F1F5F9', fontSize: 14, fontWeight: '700', marginLeft: 12 },
-  divider:        { height: 1, backgroundColor: '#334155', marginVertical: 10 },
+  billPrice:      { color: '#0F172A', fontSize: 14, fontWeight: '700', marginLeft: 12 },
+  overriddenTag:  { color: '#17B9A1', fontSize: 10, fontWeight: '700', marginTop: 2 },
+
+  // Bill items — group vs standalone visual hierarchy
+  billItemsHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  printAllBtn:     { backgroundColor: '#17B9A115', borderWidth: 1, borderColor: '#17B9A155', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  printAllBtnText: { color: '#17B9A1', fontSize: 11, fontWeight: '700' },
+
+  groupWrap:       { backgroundColor: '#6366F108', borderLeftWidth: 3, borderLeftColor: '#6366f1', borderRadius: 8, padding: 10, marginBottom: 12 },
+  groupHeaderRow:  { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  groupHeaderName: { color: '#0F172A', fontSize: 14, fontWeight: '700' },
+  grpTagBadge:     { backgroundColor: '#6366f1', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginLeft: 8 },
+  grpTagBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800', letterSpacing: 0.3 },
+
+  memberRow:       { flexDirection: 'row', marginTop: 8 },
+  memberConnector: { width: 10, borderLeftWidth: 1.5, borderLeftColor: '#6366f155', marginRight: 8 },
+  memberTopLine:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  memberName:      { color: '#334155', fontSize: 13, fontWeight: '600', flexShrink: 1 },
+
+  standaloneWrap:  { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, padding: 10, marginBottom: 12 },
+  standaloneName:  { color: '#0F172A', fontSize: 14, fontWeight: '600', flexShrink: 1 },
+
+  accRow:          { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  accInputCompact: { flex: 1, maxWidth: 160, backgroundColor: '#F8FAFC', color: '#0F172A', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, fontSize: 12, fontWeight: '700', borderWidth: 1, borderColor: '#17B9A155' },
+  printOneBtn:     { width: 30, height: 30, borderRadius: 8, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' },
+  printOneBtnIcon: { fontSize: 13 },
+
+  billGroupBlock: { borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingBottom: 10, marginBottom: 10 },
+  billSubItem:    { marginLeft: 14, marginTop: 8 },
+  billSubHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  billSubName:    { color: '#475569', fontSize: 13, fontWeight: '600', flex: 1 },
+  tubeChip:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, gap: 5 },
+  tubeDot:        { width: 8, height: 8, borderRadius: 4 },
+  tubeChipText:   { color: '#64748B', fontSize: 10, fontWeight: '600' },
+  accInput:       { backgroundColor: '#F8FAFC', color: '#0F172A', paddingHorizontal: 12, paddingVertical: 9, borderRadius: 8, fontSize: 13, fontWeight: '600', borderWidth: 1, borderColor: '#17B9A155' },
+  accGenRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  accGenText:     { color: '#64748B', fontSize: 12 },
+  divider:        { height: 1, backgroundColor: '#E2E8F0', marginVertical: 10 },
   discLabel:      { color: '#475569', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 6 },
-  discTypePicker: { flex: 1.4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0F172A', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#334155' },
-  discTypeText:   { color: '#F1F5F9', fontSize: 13 },
-  discInput:      { flex: 1, backgroundColor: '#0F172A', color: '#F1F5F9', padding: 10, borderRadius: 8, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
+  discTypePicker: { flex: 1.4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8FAFC', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  discTypeText:   { color: '#0F172A', fontSize: 13 },
+  discInput:      { flex: 1, backgroundColor: '#F8FAFC', color: '#0F172A', padding: 10, borderRadius: 8, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   totalRow:       { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
   totalLbl:       { color: '#64748B', fontSize: 13 },
-  totalVal:       { color: '#F1F5F9', fontSize: 13, fontWeight: '600' },
-  creditRow:      { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#334155' },
+  totalVal:       { color: '#0F172A', fontSize: 13, fontWeight: '600' },
+  creditRow:      { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   creditLbl:      { color: '#94A3B8', fontSize: 13 },
   generateBtn:    { marginTop: 14, padding: 15, borderRadius: 12, backgroundColor: '#F97316', alignItems: 'center' },
   generateText:   { color: '#fff', fontSize: 15, fontWeight: 'bold' },
   creditInfoBox:  { backgroundColor: '#F59E0B15', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#F59E0B33', marginVertical: 8 },
   creditInfoText: { color: '#F59E0B', fontSize: 13 },
   manageCreditLink: { color: '#F97316', fontSize: 13, fontWeight: '700' },
-  paySection:     { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#334155' },
+  paySection:     { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   paySectionLbl:  { color: '#475569', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
   payBtn:         { flex: 1, padding: 11, borderRadius: 10, alignItems: 'center' },
   payBtnText:     { color: '#fff', fontWeight: '700', fontSize: 12 },
-  waInput:        { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 11, borderRadius: 10, fontSize: 13, borderWidth: 1, borderColor: '#334155' },
+  payBtnOutline:      { backgroundColor: '#17B9A115', borderWidth: 1.5, borderColor: '#17B9A1' },
+  payBtnOutlineText:  { color: '#17B9A1', fontWeight: '700', fontSize: 12 },
+  waInput:        { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 11, borderRadius: 10, fontSize: 13, borderWidth: 1, borderColor: '#E2E8F0' },
   waSendBtn:      { backgroundColor: '#25D366', paddingHorizontal: 14, borderRadius: 10, justifyContent: 'center' },
   waSendText:     { color: '#fff', fontWeight: '700', fontSize: 13 },
-  waHint:         { color: '#334155', fontSize: 11, marginTop: 6 },
+  waHint:         { color: '#E2E8F0', fontSize: 11, marginTop: 6 },
   waitingBox:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, backgroundColor: '#8B5CF615', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#8B5CF633' },
   waitingText:    { flex: 1, color: '#8B5CF6', fontSize: 12, fontWeight: '600' },
-  paidSection:    { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#334155' },
+  paidSection:    { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   paidText:       { color: '#10B981', fontWeight: '700', fontSize: 14, marginBottom: 10 },
-  newBillBtn:     { marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center', borderWidth: 1, borderColor: '#334155' },
-  newBillText:    { color: '#0EA5E9', fontWeight: '700' },
+  newBillBtn:     { marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' },
+  newBillText:    { color: '#17B9A1', fontWeight: '700' },
   overlay:        { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  modalBox:       { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '88%' },
-  modalTitle:     { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  modalSearch:    { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155', marginBottom: 12 },
-  patItem:        { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#334155' },
-  patItemSel:     { borderColor: '#0EA5E9', backgroundColor: '#0EA5E915' },
-  patName:        { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
+  modalBox:       { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '88%', overflow: 'hidden' },
+  modalTitle:     { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  modalSearch:    { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 12 },
+  patItem:        { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  patItemSel:     { borderColor: '#17B9A1', backgroundColor: '#17B9A115' },
+  patName:        { color: '#0F172A', fontSize: 14, fontWeight: '600' },
   patBarcode:     { color: '#64748B', fontSize: 12, marginTop: 2 },
-  modalCancel:    { marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  modalCancel:    { marginTop: 12, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   modalCancelText:{ color: '#EF4444', fontWeight: '700' },
 });

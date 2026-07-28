@@ -1,8 +1,9 @@
 import { Drawer } from 'expo-router/drawer';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList } from 'react-native';
-import { router, usePathname } from 'expo-router';
+import { router, usePathname, useNavigation } from 'expo-router';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Image } from 'expo-image';
 import { authHeader, API_BASE } from '../../../src/utils/auth';
 
 const LAB_MENUS = [
@@ -17,7 +18,9 @@ const LAB_MENUS = [
   { name: 'branches',          title: 'Branches',            icon: '🌿' },
   { name: 'pricing',           title: 'Group / Org Pricing', icon: '💰' },
   { name: 'tests-catalog',     title: 'Tests Catalog',       icon: '📚' },
+  { name: 'departments',       title: 'Departments',         icon: '🏬' },
   { name: 'users-staff',       title: 'Users & Staff',       icon: '👤' },
+  { name: 'report-settings',   title: 'Report Settings',     icon: '📝' },
   { name: 'new-bill',          title: 'New Bill',            icon: '🧾' },
   { name: 'bills',             title: 'Bills',               icon: '💳' },
   { name: 'doctor-commission', title: 'Doctor Commission',   icon: '💊' },
@@ -104,13 +107,27 @@ function NotificationBells() {
   );
 }
 
+// ── Menu button (plain text glyph so it always renders, even if the
+// default drawer-toggle vector icon fails to load) ──
+function MenuButton() {
+  const navigation = useNavigation<any>();
+  return (
+    <TouchableOpacity style={styles.menuBtn} onPress={() => navigation.openDrawer()} hitSlop={12}>
+      <Text style={styles.menuBtnIcon}>☰</Text>
+    </TouchableOpacity>
+  );
+}
+
 function CustomDrawer({ navigation }: { navigation: any }) {
   const pathname = usePathname();
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
-      <View style={styles.drawerHeader}>
-        <Text style={styles.drawerLogo}>🧪  MediCloud</Text>
-        <Text style={styles.drawerRole}>Lab Portal</Text>
+    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+      <View style={[styles.drawerHeader, { flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
+        <Image source={require('../../../assets/images/brand-logo.png')} style={styles.drawerLogoImg} contentFit="contain" />
+        <View>
+          <Text style={styles.drawerLogo}>Healthycian</Text>
+          <Text style={styles.drawerRole}>Lab Portal v1.0</Text>
+        </View>
       </View>
       <ScrollView contentContainerStyle={{ paddingVertical: 8 }}>
         {LAB_MENUS.map(menu => {
@@ -118,7 +135,7 @@ function CustomDrawer({ navigation }: { navigation: any }) {
           return (
             <TouchableOpacity key={menu.name}
               style={[styles.menuItem, isActive && styles.menuItemActive]}
-              onPress={() => { router.push(`/(lab)/${menu.name}` as any); navigation.closeDrawer(); }}>
+              onPress={() => { navigation.closeDrawer(); router.push(`/(lab)/${menu.name}` as any); }}>
               <Text style={styles.menuIcon}>{menu.icon}</Text>
               <Text style={[styles.menuLabel, isActive && styles.menuLabelActive]}>{menu.title}</Text>
             </TouchableOpacity>
@@ -138,10 +155,11 @@ export default function LabLayout() {
       <Drawer
         drawerContent={(props) => <CustomDrawer {...props} />}
         screenOptions={{
-          headerStyle:      { backgroundColor: '#0F172A' },
-          headerTintColor:  '#F1F5F9',
+          headerStyle:      { backgroundColor: '#F8FAFC' },
+          headerTintColor:  '#0F172A',
           headerTitleStyle: { fontWeight: 'bold' },
-          drawerStyle:      { backgroundColor: '#0F172A', width: 280 },
+          drawerStyle:      { backgroundColor: '#F8FAFC', width: 280 },
+          headerLeft:       () => <MenuButton />,
           headerRight:      () => <NotificationBells />,
         }}
       >
@@ -154,15 +172,18 @@ export default function LabLayout() {
 }
 
 const styles = StyleSheet.create({
-  drawerHeader:    { paddingTop: 56, paddingBottom: 18, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: '#1E293B' },
-  drawerLogo:      { fontSize: 18, fontWeight: 'bold', color: '#F1F5F9' },
-  drawerRole:      { fontSize: 12, color: '#0EA5E9', marginTop: 4 },
+  drawerHeader:    { paddingTop: 56, paddingBottom: 18, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  drawerLogoImg:   { width: 34, height: 34 },
+  drawerLogo:      { fontSize: 18, fontWeight: 'bold', color: '#0F172A' },
+  drawerRole:      { fontSize: 12, color: '#17B9A1', marginTop: 2 },
+  menuBtn:         { paddingHorizontal: 14, paddingVertical: 6 },
+  menuBtnIcon:     { fontSize: 22, color: '#0F172A' },
   menuItem:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, marginHorizontal: 8 },
-  menuItemActive:  { backgroundColor: '#1E293B' },
+  menuItemActive:  { backgroundColor: '#FFFFFF' },
   menuIcon:        { fontSize: 18, marginRight: 12 },
   menuLabel:       { fontSize: 14, color: '#64748B' },
-  menuLabelActive: { color: '#0EA5E9', fontWeight: '600' },
-  logoutBtn:       { margin: 12, padding: 14, borderRadius: 10, backgroundColor: '#1E293B', borderWidth: 1, borderColor: '#334155' },
+  menuLabelActive: { color: '#17B9A1', fontWeight: '600' },
+  logoutBtn:       { margin: 12, padding: 14, borderRadius: 10, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0' },
   logoutText:      { color: '#EF4444', fontSize: 14, fontWeight: '600', textAlign: 'center' },
   // Bells
   bell:            { padding: 6, position: 'relative' },
@@ -170,12 +191,12 @@ const styles = StyleSheet.create({
   badge:           { position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   badgeText:       { color: '#fff', fontSize: 10, fontWeight: 'bold' },
   notifOverlay:    { flex: 1, backgroundColor: '#00000066', paddingTop: 90, paddingHorizontal: 12 },
-  notifCard:       { backgroundColor: '#1E293B', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#334155' },
-  notifTitle:      { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold', marginBottom: 12 },
-  notifItem:       { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#334155' },
-  notifName:       { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
+  notifCard:       { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#E2E8F0' },
+  notifTitle:      { color: '#0F172A', fontSize: 15, fontWeight: 'bold', marginBottom: 12 },
+  notifItem:       { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  notifName:       { color: '#0F172A', fontSize: 14, fontWeight: '600' },
   notifSub:        { fontSize: 12, marginTop: 2 },
   notifEmpty:      { color: '#64748B', textAlign: 'center', paddingVertical: 20 },
-  notifAction:     { marginTop: 12, padding: 12, borderRadius: 10, backgroundColor: '#0EA5E9', alignItems: 'center' },
+  notifAction:     { marginTop: 12, padding: 12, borderRadius: 10, backgroundColor: '#17B9A1', alignItems: 'center' },
   notifActionText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

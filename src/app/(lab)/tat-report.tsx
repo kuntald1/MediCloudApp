@@ -86,7 +86,7 @@ export default function TATReport() {
   const branchOptions    = data?.filters?.branches ?? [];
   const franchises       = data?.franchises ?? [];
 
-  if (loading && !data) return <View style={styles.center}><ActivityIndicator color="#0EA5E9" size="large" /></View>;
+  if (loading && !data) return <View style={styles.center}><ActivityIndicator color="#17B9A1" size="large" /></View>;
 
   return (
     <View style={styles.container}>
@@ -113,10 +113,10 @@ export default function TATReport() {
       </View>
 
       <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17B9A1" />}
         contentContainerStyle={{ padding: 12, paddingBottom: 32 }}>
 
-        {loading ? <ActivityIndicator color="#0EA5E9" style={{ marginTop: 24 }} /> : franchises.length === 0 ? (
+        {loading ? <ActivityIndicator color="#17B9A1" style={{ marginTop: 24 }} /> : franchises.length === 0 ? (
           <View style={styles.empty}><Text style={styles.emptyIcon}>⏱️</Text><Text style={styles.emptyText}>No TAT data for this filter</Text></View>
         ) : franchises.map((f: any, i: number) => {
           const isExpanded = expandedFranchise === (f.franchise_id ?? 'none');
@@ -147,7 +147,7 @@ export default function TATReport() {
                       {pct > 0.08 && <Text style={styles.stageBarLabel}>{Math.round(seg.val)}</Text>}
                     </View>
                   );
-                }) : <View style={{ flex: 1, backgroundColor: '#334155' }} />}
+                }) : <View style={{ flex: 1, backgroundColor: '#E2E8F0' }} />}
               </View>
 
               {/* Phases summary — always visible */}
@@ -214,14 +214,14 @@ export default function TATReport() {
             <ScrollView style={{ maxHeight: 460 }}>
               <Text style={styles.fieldLabel}>Franchise</Text>
               <TouchableOpacity style={styles.input} onPress={() => setShowFranchisePicker(true)}>
-                <Text style={{ color: franchiseId ? '#F1F5F9' : '#475569' }}>
+                <Text style={{ color: franchiseId ? '#0F172A' : '#475569' }}>
                   {franchiseOptions.find((f: any) => f.id === franchiseId)?.name ?? 'All Franchises'}
                 </Text>
               </TouchableOpacity>
 
               <Text style={styles.fieldLabel}>Branch</Text>
               <TouchableOpacity style={styles.input} onPress={() => setShowBranchPicker(true)}>
-                <Text style={{ color: branchId ? '#F1F5F9' : '#475569' }}>
+                <Text style={{ color: branchId ? '#0F172A' : '#475569' }}>
                   {branchOptions.find((b: any) => b.id === branchId)?.name ?? 'All Branches'}
                 </Text>
               </TouchableOpacity>
@@ -230,13 +230,13 @@ export default function TATReport() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>From</Text>
                   <TouchableOpacity style={styles.input} onPress={() => setShowFromPicker(true)}>
-                    <Text style={{ color: fromDate ? '#F1F5F9' : '#475569', fontSize: 12 }}>{fromDate || 'From date'}</Text>
+                    <Text style={{ color: fromDate ? '#0F172A' : '#475569', fontSize: 12 }}>{fromDate || 'From date'}</Text>
                   </TouchableOpacity>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fieldLabel}>To</Text>
                   <TouchableOpacity style={styles.input} onPress={() => setShowToPicker(true)}>
-                    <Text style={{ color: toDate ? '#F1F5F9' : '#475569', fontSize: 12 }}>{toDate || 'To date'}</Text>
+                    <Text style={{ color: toDate ? '#0F172A' : '#475569', fontSize: 12 }}>{toDate || 'To date'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -314,59 +314,59 @@ export default function TATReport() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0F172A' },
-  center:         { flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' },
+  container:      { flex: 1, backgroundColor: '#F8FAFC' },
+  center:         { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
   filterBar:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12 },
-  filterToggle:   { backgroundColor: '#1E293B', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#334155' },
-  filterToggleText:{ color: '#0EA5E9', fontWeight: '600', fontSize: 13 },
+  filterToggle:   { backgroundColor: '#FFFFFF', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+  filterToggleText:{ color: '#17B9A1', fontWeight: '600', fontSize: 13 },
   clearText:      { color: '#EF4444', fontSize: 12 },
   legendRow:      { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, paddingBottom: 10, gap: 12 },
   legendItem:     { flexDirection: 'row', alignItems: 'center' },
   legendDot:      { width: 8, height: 8, borderRadius: 4 },
   legendText:     { color: '#94A3B8', fontSize: 10, marginLeft: 5 },
   stageBar:       { flexDirection: 'row', height: 30, marginHorizontal: 14, marginBottom: 12, borderRadius: 8, overflow: 'hidden' },
-  stageBarLabel:  { color: '#F1F5F9', fontSize: 11, fontWeight: '700' },
+  stageBarLabel:  { color: '#0F172A', fontSize: 11, fontWeight: '700' },
   phaseLabelRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 3 },
-  card:           { backgroundColor: '#1E293B', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#334155', overflow: 'hidden' },
+  card:           { backgroundColor: '#FFFFFF', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
   cardHeader:     { flexDirection: 'row', alignItems: 'center', padding: 14 },
-  franchiseName:  { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold' },
+  franchiseName:  { color: '#0F172A', fontSize: 15, fontWeight: 'bold' },
   orderCount:     { color: '#64748B', fontSize: 12, marginTop: 2 },
   totalBox:       { alignItems: 'flex-end', marginRight: 10 },
   totalLabel:     { color: '#64748B', fontSize: 10 },
-  totalVal:       { color: '#0EA5E9', fontSize: 15, fontWeight: 'bold' },
+  totalVal:       { color: '#17B9A1', fontSize: 15, fontWeight: 'bold' },
   expandIcon:     { color: '#475569', fontSize: 12 },
   phaseRow:       { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 14 },
-  phaseBox:       { flex: 1, backgroundColor: '#0F172A', borderRadius: 8, padding: 8, alignItems: 'center' },
+  phaseBox:       { flex: 1, backgroundColor: '#F8FAFC', borderRadius: 8, padding: 8, alignItems: 'center' },
   phaseLabel:     { color: '#64748B', fontSize: 9, marginLeft: 5 },
   phaseVal:       { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
-  stageSection:   { borderTopWidth: 1, borderTopColor: '#334155', padding: 14 },
-  stageRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#0F172A' },
+  stageSection:   { borderTopWidth: 1, borderTopColor: '#E2E8F0', padding: 14 },
+  stageRow:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F8FAFC' },
   stageIcon:      { fontSize: 16, marginRight: 10 },
-  stageName:      { color: '#F1F5F9', fontSize: 12, fontWeight: '600' },
+  stageName:      { color: '#0F172A', fontSize: 12, fontWeight: '600' },
   stageN:         { color: '#475569', fontSize: 10, marginTop: 1 },
   stageStats:     { alignItems: 'center', width: 52 },
   stageStatLabel: { color: '#475569', fontSize: 9 },
   stageStatVal:   { color: '#94A3B8', fontSize: 11, fontWeight: '600', marginTop: 1 },
-  totalStatsRow:  { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#334155' },
-  totalStatsLabel:{ color: '#0EA5E9', fontSize: 11, fontWeight: '700' },
+  totalStatsRow:  { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
+  totalStatsLabel:{ color: '#17B9A1', fontSize: 11, fontWeight: '700' },
   totalStatsVal:  { color: '#94A3B8', fontSize: 11, marginTop: 4 },
   empty:          { alignItems: 'center', marginTop: 60 },
   emptyIcon:      { fontSize: 48 },
   emptyText:      { color: '#475569', fontSize: 16, marginTop: 12 },
   overlay:        { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  filterBox:      { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28 },
-  modalTitle:     { color: '#F1F5F9', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  filterBox:      { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28 },
+  modalTitle:     { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
   fieldLabel:     { color: '#94A3B8', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 12 },
-  input:          { backgroundColor: '#0F172A', color: '#F1F5F9', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#334155' },
+  input:          { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   dateRow:        { flexDirection: 'row', gap: 10 },
   filterBtns:     { flexDirection: 'row', gap: 12, marginTop: 18 },
-  cancelBtn:      { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  cancelBtn:      { flex: 1, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   cancelText:     { color: '#94A3B8', fontWeight: '600' },
-  applyBtn:       { flex: 1.5, padding: 14, borderRadius: 10, backgroundColor: '#0EA5E9', alignItems: 'center' },
+  applyBtn:       { flex: 1.5, padding: 14, borderRadius: 10, backgroundColor: '#17B9A1', alignItems: 'center' },
   applyText:      { color: '#fff', fontWeight: '700' },
-  pickerBox:      { backgroundColor: '#1E293B', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
-  pickerItem:     { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#334155' },
-  pickerText:     { color: '#F1F5F9', fontSize: 14 },
-  modalCancel:    { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#0F172A', alignItems: 'center' },
+  pickerBox:      { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  pickerItem:     { padding: 14, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  pickerText:     { color: '#0F172A', fontSize: 14 },
+  modalCancel:    { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   modalCancelText:{ color: '#EF4444', fontWeight: '700' },
 });

@@ -23,7 +23,7 @@ function buildCheckoutHtml(order: { key_id: string; order_id: string; amount: nu
 <!DOCTYPE html>
 <html>
 <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#0F172A;">
+<body style="margin:0;padding:0;background:#F8FAFC;">
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
   var options = {
@@ -227,7 +227,7 @@ export default function ManageCredit() {
 
       {/* Razorpay Checkout WebView */}
       <Modal visible={!!checkoutHtml} animationType="slide" onRequestClose={() => setCheckoutHtml(null)}>
-        <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
+        <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
           <TouchableOpacity style={styles.checkoutClose} onPress={() => setCheckoutHtml(null)}>
             <Text style={styles.checkoutCloseText}>✕ Cancel</Text>
           </TouchableOpacity>
@@ -259,27 +259,27 @@ export default function ManageCredit() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0F172A' },
-  center:         { flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' },
+  container:      { flex: 1, backgroundColor: '#F8FAFC' },
+  center:         { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
   emptyText:      { color: '#64748B', fontSize: 15 },
-  orgName:        { color: '#F1F5F9', fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
+  orgName:        { color: '#0F172A', fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
   statRow:        { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  statBox:        { flex: 1, backgroundColor: '#1E293B', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#334155' },
+  statBox:        { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#E2E8F0' },
   statBoxAlert:   { borderColor: '#EF4444' },
   statLabel:      { color: '#64748B', fontSize: 10, fontWeight: '600', marginBottom: 4 },
-  statVal:        { color: '#F1F5F9', fontSize: 15, fontWeight: 'bold' },
+  statVal:        { color: '#0F172A', fontSize: 15, fontWeight: 'bold' },
   warnBox:        { backgroundColor: '#EF444418', borderWidth: 1, borderColor: '#EF444455', borderRadius: 10, padding: 12, marginBottom: 12 },
   warnText:       { color: '#F87171', fontSize: 12, lineHeight: 17 },
-  payCard:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E293B', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#334155', marginBottom: 16 },
-  payTitle:       { color: '#F1F5F9', fontSize: 14, fontWeight: '700' },
+  payCard:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 },
+  payTitle:       { color: '#0F172A', fontSize: 14, fontWeight: '700' },
   paySub:         { color: '#64748B', fontSize: 11, marginTop: 2 },
   payBtn:         { backgroundColor: '#3B82F6', paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10 },
   payBtnText:     { color: '#fff', fontWeight: '700', fontSize: 12.5 },
   ledgerTitle:    { color: '#94A3B8', fontSize: 13, fontWeight: '700', marginBottom: 10 },
-  entryRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E293B', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#334155' },
+  entryRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E2E8F0' },
   typeBadge:      { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   typeBadgeText:  { fontSize: 10, fontWeight: '700' },
-  entryRef:       { color: '#F1F5F9', fontSize: 13, fontWeight: '600' },
+  entryRef:       { color: '#0F172A', fontSize: 13, fontWeight: '600' },
   entryDate:      { color: '#475569', fontSize: 11, marginTop: 2 },
   entryAmt:       { fontSize: 13, fontWeight: '700' },
   entryBalance:   { color: '#64748B', fontSize: 11, marginTop: 2 },
@@ -287,6 +287,6 @@ const styles = StyleSheet.create({
   checkoutClose:  { padding: 16, paddingTop: 50 },
   checkoutCloseText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
   verifyOverlay:  { flex: 1, backgroundColor: '#000000AA', justifyContent: 'center', alignItems: 'center' },
-  verifyBox:      { backgroundColor: '#1E293B', borderRadius: 16, padding: 28, alignItems: 'center' },
-  verifyText:     { color: '#F1F5F9', fontSize: 14, fontWeight: '600', marginTop: 12 },
+  verifyBox:      { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 28, alignItems: 'center' },
+  verifyText:     { color: '#0F172A', fontSize: 14, fontWeight: '600', marginTop: 12 },
 });
