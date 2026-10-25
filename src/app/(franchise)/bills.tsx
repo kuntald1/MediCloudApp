@@ -80,8 +80,8 @@ const fmtDateTime = (iso?: string) => iso ? new Date(iso).toLocaleString('en-IN'
   day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
 }) : '';
 
-const STATUS_COLOR: Record<string, string> = { paid: '#10B981', unpaid: '#EF4444', credit: '#8B5CF6', partial: '#F59E0B' };
-const STATUS_LABEL: Record<string, string> = { paid: 'Paid', unpaid: 'Unpaid', credit: 'On Credit', partial: 'Partial' };
+const STATUS_COLOR: Record<string, string> = { paid: '#10B981', unpaid: '#EF4444', credit: '#8B5CF6', partial: '#F59E0B', cancelled: '#64748B' };
+const STATUS_LABEL: Record<string, string> = { paid: 'Paid', unpaid: 'Unpaid', credit: 'On Credit', partial: 'Partial', cancelled: 'Cancelled' };
 
 export default function FranchiseBills() {
   const [bills, setBills]           = useState<Bill[]>([]);
@@ -269,10 +269,12 @@ export default function FranchiseBills() {
   };
 
   const renderItem = ({ item: b }: { item: Bill }) => {
-    const due   = Math.max(0, (b.total || 0) - (b.paid || 0));
+    const rowCancelled = b.status === 'cancelled';
+    // a cancelled bill owes nothing — it stays on record but is not outstanding
+    const due   = rowCancelled ? 0 : Math.max(0, (b.total || 0) - (b.paid || 0));
     const color = STATUS_COLOR[b.status] ?? '#64748B';
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, rowCancelled && { opacity: 0.55 }]}>
         <View style={styles.cardTop}>
           <Text style={styles.billNo}>{b.bill_no}</Text>
           <View style={[styles.badge, { borderColor: color }]}>

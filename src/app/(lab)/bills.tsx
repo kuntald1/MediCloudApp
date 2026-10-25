@@ -11,7 +11,9 @@ import {
 } from 'react-native';
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
-const STATUS_COLOR: Record<string, string> = { unpaid: '#EF4444', partial: '#F59E0B', paid: '#10B981', credit: '#8B5CF6' };
+const STATUS_COLOR: Record<string, string> = { unpaid: '#EF4444', partial: '#F59E0B', paid: '#10B981', credit: '#8B5CF6', cancelled: '#64748B' };
+// a bill can only be cancelled while every test is still at one of these stages
+const CANCELLABLE = ['collected', 'received'];
 
 // ── Sample-label printing (same client-side pattern as New Bill: barcode PNG
 // via @bwip-js/react-native embedded as a static <img>, handed to expo-print).
@@ -71,10 +73,12 @@ interface Bill {
   total: number; paid: number; status: string; created_at: string;
   organization_name?: string; discount_amount?: number; subtotal?: number;
   items?: any[]; payments?: any[]; phone?: string | null;
+  cancel_reason?: string | null; cancelled_at?: string | null;
 }
 
 export default function Bills() {
   const isFranchise = getUser()?.role === 'franchise';
+  const isAdmin = ['lab_admin', 'super_admin'].includes(getUser()?.role ?? '');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [bills, setBills]       = useState<Bill[]>([]);
@@ -97,6 +101,9 @@ export default function Bills() {
   const [waBusy, setWaBusy]     = useState(false);
   const [waiting, setWaiting]   = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [cancelOpen, setCancelOpen]     = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelBusy, setCancelBusy]     = useState(false);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -122,6 +129,7 @@ export default function Bills() {
   // Open detail — fetch full bill (items + payments)
   const openBill = async (b: Bill) => {
     setSel(b); setDetailLoading(true); setWaPhone(b.phone ?? ''); setWaiting(false);
+    setCancelOpen(false); setCancelReason('');
     try {
       const res = await fetch(`${API_BASE}/api/billing/bills/${b.id}`, { headers: authHeader() });
       if (res.ok) { const full = await res.json(); setSel(full); }
@@ -204,6 +212,28 @@ export default function Bills() {
       Alert.alert('✅ Paid', `${inr(due)} recorded (${method.toUpperCase()})`);
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setPayingMethod(null); }
+  };
+
+  const cancelBill = async () => {
+    if (!sel) return;
+    const reason = cancelReason.trim();
+    if (!reason) { Alert.alert('Reason needed', 'Enter a reason for cancelling this bill'); return; }
+    setCancelBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/billing/bills/${sel.id}/cancel`, {
+        method: 'PUT', headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? 'Cancel failed'); }
+      const updated = await res.json();
+      setSel(updated); setCancelOpen(false); setCancelReason(''); fetchBills();
+      const refunded = Math.abs((updated.payments ?? [])
+        .filter((p: any) => (Number(p.amount) || 0) < 0)
+        .reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0));
+      Alert.alert('Bill cancelled',
+        refunded > 0 ? `${updated.bill_no} cancelled · ${inr(refunded)} refunded` : `${updated.bill_no} cancelled`);
+    } catch (e: any) { Alert.alert('Could not cancel', e.message); }
+    finally { setCancelBusy(false); }
   };
 
   const payOnline = async () => {
@@ -312,12 +342,14 @@ export default function Bills() {
   };
 
   const renderItem = ({ item: b }: { item: Bill }) => {
-    const color   = STATUS_COLOR[b.status] ?? '#64748B';
-    const balance = b.total - b.paid;
+    const color        = STATUS_COLOR[b.status] ?? '#64748B';
+    const rowCancelled = b.status === 'cancelled';
+    // a cancelled bill owes nothing — it stays on record but is not outstanding
+    const balance      = rowCancelled ? 0 : b.total - b.paid;
     return (
-      <TouchableOpacity style={styles.card} onPress={() => openBill(b)}>
+      <TouchableOpacity style={[styles.card, rowCancelled && styles.cardCancelled]} onPress={() => openBill(b)}>
         <View style={styles.cardRow}>
-          <Text style={styles.billNo}>🧾 {b.bill_no}</Text>
+          <Text style={[styles.billNo, rowCancelled && styles.billNoCancelled]}>🧾 {b.bill_no}</Text>
           <View style={[styles.badge, { borderColor: color }]}>
             <Text style={[styles.badgeText, { color }]}>● {b.status}</Text>
           </View>
@@ -334,9 +366,15 @@ export default function Bills() {
     );
   };
 
-  const due    = sel ? Math.max(0, (sel.total || 0) - (sel.paid || 0)) : 0;
+  const isCancelled = sel?.status === 'cancelled';
+  const due    = (sel && !isCancelled) ? Math.max(0, (sel.total || 0) - (sel.paid || 0)) : 0;
   const isPaid = sel && due <= 0;
   const isCredit = sel?.status === 'credit';
+  // tests that have already moved past 'received' — these block cancellation
+  const blockingItems = (sel?.items ?? []).filter((it: any) => !CANCELLABLE.includes(it.status ?? 'collected'));
+  const refundedAmt = Math.abs((sel?.payments ?? [])
+    .filter((p: any) => (Number(p.amount) || 0) < 0)
+    .reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0));
 
   return (
     <View style={styles.container}>
@@ -398,6 +436,18 @@ export default function Bills() {
 
             {detailLoading ? <ActivityIndicator color="#17B9A1" style={{ marginVertical: 24 }} /> : (
               <ScrollView style={{ maxHeight: 460 }}>
+                {/* Cancelled banner */}
+                {isCancelled && (
+                  <View style={styles.cancelledBox}>
+                    <Text style={styles.cancelledTitle}>This bill was cancelled</Text>
+                    <Text style={styles.cancelledSub}>
+                      {sel?.cancel_reason || '—'}
+                      {sel?.cancelled_at ? `  ·  ${new Date(sel.cancelled_at).toLocaleString('en-IN')}` : ''}
+                    </Text>
+                    {refundedAmt > 0 && <Text style={styles.cancelledRefund}>{inr(refundedAmt)} refunded</Text>}
+                  </View>
+                )}
+
                 {/* Items */}
                 {sel?.items && sel.items.length > 0 && (
                   <View style={styles.itemsBox}>
@@ -454,8 +504,8 @@ export default function Bills() {
                   <Text style={styles.payHist}>Payments: {sel.payments.map((p: any) => `${p.method ?? 'online'} ${inr(p.amount)}`).join(', ')}</Text>
                 )}
 
-                {/* ── UNPAID: payment options (lab only, not credit) ── */}
-                {!isFranchise && !isPaid && !isCredit && (
+                {/* ── UNPAID: payment options (lab only, not credit, not cancelled) ── */}
+                {!isFranchise && !isPaid && !isCredit && !isCancelled && (
                   <View style={styles.paySection}>
                     <Text style={styles.payLabel}>COLLECT PAYMENT</Text>
                     <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
@@ -487,7 +537,7 @@ export default function Bills() {
                 )}
 
                 {/* Credit note */}
-                {isCredit && (
+                {isCredit && !isCancelled && (
                   <View style={styles.creditBox}>
                     <Text style={styles.creditText}>On credit — settle from Manage Credit / organization ledger.</Text>
                   </View>
@@ -498,10 +548,68 @@ export default function Bills() {
                   <TouchableOpacity style={[styles.payBtn, { backgroundColor: '#F97316', flex: 1 }]} onPress={() => sel && receipt(sel)}>
                     <Text style={styles.payBtnText}>⬇ Download Receipt</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.payBtn, { backgroundColor: '#25D366', flex: 1 }]} onPress={sendWhatsApp}>
-                    <Text style={styles.payBtnText}>💬 Send Receipt</Text>
-                  </TouchableOpacity>
+                  {!isCancelled && (
+                    <TouchableOpacity style={[styles.payBtn, { backgroundColor: '#25D366', flex: 1 }]} onPress={sendWhatsApp}>
+                      <Text style={styles.payBtnText}>💬 Send Receipt</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+
+                {/* ── CANCEL BILL — admin only, allowed up to and including 'received' ── */}
+                {isAdmin && !isCancelled && (
+                  blockingItems.length > 0 ? (
+                    <View style={styles.cantCancelBox}>
+                      <Text style={styles.cantCancelTitle}>This bill can no longer be cancelled</Text>
+                      <Text style={styles.cantCancelSub}>
+                        Work has already started on {blockingItems.length === 1 ? 'this test' : 'these tests'}:{' '}
+                        {blockingItems.slice(0, 4).map((it: any) =>
+                          `${it.package_name ? `${it.package_name} (${it.test_name})` : it.test_name} — ${it.status}`).join('; ')}
+                        {blockingItems.length > 4 ? ` and ${blockingItems.length - 4} more` : ''}.
+                      </Text>
+                    </View>
+                  ) : !cancelOpen ? (
+                    <TouchableOpacity style={styles.cancelOpenBtn} onPress={() => setCancelOpen(true)}>
+                      <Text style={styles.cancelOpenBtnText}>Cancel this bill</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.cancelSection}>
+                      <Text style={styles.payLabel}>REASON FOR CANCELLING (REQUIRED)</Text>
+                      <TextInput
+                        style={styles.waInput}
+                        value={cancelReason}
+                        onChangeText={setCancelReason}
+                        placeholder="e.g. duplicate bill — same tests already billed"
+                        placeholderTextColor="#475569"
+                        editable={!cancelBusy}
+                        autoFocus
+                      />
+                      {(sel?.paid ?? 0) > 0 && (
+                        <View style={styles.refundWarnBox}>
+                          <Text style={styles.refundWarnText}>
+                            {inr(sel?.paid ?? 0)} has been collected on this bill. Cancelling records a refund of {inr(sel?.paid ?? 0)} and sets the bill to ₹0 — hand the money back at the counter.
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={styles.cancelNote}>
+                        The bill stays on record as cancelled — it is not deleted, and {sel?.bill_no} is not reused.
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity style={[styles.payBtn, { backgroundColor: '#DC2626', flex: 1 }]}
+                          onPress={cancelBill} disabled={cancelBusy}>
+                          {cancelBusy ? <ActivityIndicator color="#fff" size="small" /> : (
+                            <Text style={styles.payBtnText}>
+                              {(sel?.paid ?? 0) > 0 ? `Confirm cancel & refund ${inr(sel?.paid ?? 0)}` : 'Confirm cancel'}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.keepBillBtn}
+                          onPress={() => { setCancelOpen(false); setCancelReason(''); }} disabled={cancelBusy}>
+                          <Text style={styles.keepBillBtnText}>Keep bill</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )
+                )}
               </ScrollView>
             )}
           </View>
@@ -527,8 +635,25 @@ const styles = StyleSheet.create({
   filterText:      { color: '#94A3B8', fontSize: 11, fontWeight: '600' },
   count:           { color: '#475569', fontSize: 12, paddingHorizontal: 12, marginBottom: 4 },
   card:            { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  cardCancelled:   { opacity: 0.55 },
   cardRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   billNo:          { color: '#0F172A', fontSize: 14, fontWeight: 'bold' },
+  billNoCancelled: { textDecorationLine: 'line-through', color: '#64748B' },
+  cancelledBox:    { backgroundColor: '#64748B14', borderRadius: 8, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: '#64748B40' },
+  cancelledTitle:  { color: '#475569', fontSize: 13.5, fontWeight: '800' },
+  cancelledSub:    { color: '#64748B', fontSize: 12, marginTop: 3 },
+  cancelledRefund: { color: '#B91C1C', fontSize: 12.5, fontWeight: '700', marginTop: 4 },
+  cantCancelBox:   { backgroundColor: '#F8FAFC', borderRadius: 8, padding: 10, marginTop: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+  cantCancelTitle: { color: '#475569', fontSize: 12.5, fontWeight: '700' },
+  cantCancelSub:   { color: '#64748B', fontSize: 11.5, marginTop: 3, lineHeight: 17 },
+  cancelOpenBtn:   { marginTop: 10, borderWidth: 1, borderColor: '#DC262655', borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  cancelOpenBtnText:{ color: '#DC2626', fontSize: 13.5, fontWeight: '700' },
+  cancelSection:   { marginTop: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 12 },
+  cancelNote:      { color: '#64748B', fontSize: 11.5, marginTop: 6, marginBottom: 10, lineHeight: 17 },
+  refundWarnBox:   { backgroundColor: '#DC26260F', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: '#DC262633' },
+  refundWarnText:  { color: '#B91C1C', fontSize: 12, lineHeight: 18 },
+  keepBillBtn:     { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, paddingHorizontal: 16, justifyContent: 'center' },
+  keepBillBtnText: { color: '#64748B', fontSize: 13, fontWeight: '600' },
   badge:           { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   badgeText:       { fontSize: 11, fontWeight: '700' },
   patName:         { color: '#0F172A', fontSize: 15, fontWeight: '600', marginBottom: 2 },
