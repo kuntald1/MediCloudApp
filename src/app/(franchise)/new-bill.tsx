@@ -133,6 +133,7 @@ export default function NewBill() {
   const [waPhone, setWaPhone]           = useState('');
   const [waBusy, setWaBusy]             = useState(false);
   const [payingMethod, setPayingMethod] = useState<string|null>(null);
+  const [payAmt, setPayAmt] = useState('');   // how much to collect now — full due by default, editable for part payment
   const [waiting, setWaiting]           = useState(false); // polling for payment
 
   const [showPatientModal, setShowPatientModal] = useState(false);
@@ -439,20 +440,35 @@ export default function NewBill() {
   };
 
   // Cash / UPI
+  // the amount box always starts at the full remaining due — for a new bill, and
+  // again after each part payment, so the next instalment is pre-filled.
+  useEffect(() => {
+    if (!lastBill) { setPayAmt(''); return; }
+    const d = Math.max(0, (lastBill.total || 0) - (lastBill.paid || 0));
+    setPayAmt(d > 0 ? String(d) : '');
+  }, [lastBill?.id, lastBill?.paid, lastBill?.total]);
+
   const payCashUpi = async (method: 'cash' | 'upi') => {
     if (!lastBill) return;
     const due = Math.max(0, (lastBill.total || 0) - (lastBill.paid || 0));
+    if (due <= 0) return;
+    // part payment: collect whatever was typed, never more than what's actually due
+    const amount = Math.round(Math.min(Number(payAmt) || 0, due) * 100) / 100;
+    if (amount <= 0) { Alert.alert('Enter an amount', 'Type how much you are collecting now.'); return; }
     setPayingMethod(method);
     try {
       const res = await fetch(`${API_BASE}/api/billing/bills/${lastBill.id}/payments`, {
         method: 'POST',
         headers: { ...authHeader(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ method, amount: due }),
+        body: JSON.stringify({ method, amount }),
       });
       if (!res.ok) throw new Error('Payment failed');
       const updated = await res.json();
       setLastBill(updated);
-      Alert.alert('✅ Paid', `${inr(due)} recorded (${method.toUpperCase()})`);
+      const left = Math.max(0, (updated.total || 0) - (updated.paid || 0));
+      Alert.alert('✅ Paid', left > 0
+        ? `${inr(amount)} recorded (${method.toUpperCase()})\n${inr(left)} still due`
+        : `${inr(amount)} recorded (${method.toUpperCase()})`);
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setPayingMethod(null); }
   };
@@ -912,6 +928,18 @@ export default function NewBill() {
             {!isFranchise && !isPaid && lastBill.status !== 'credit' && (
               <View style={styles.paySection}>
                 <Text style={styles.paySectionLbl}>COLLECT PAYMENT</Text>
+                {/* pre-filled with the full due — lower it to take a part payment */}
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                  <TextInput style={styles.payAmtInput} value={payAmt} onChangeText={setPayAmt}
+                    keyboardType="numeric" placeholder="₹ amount" placeholderTextColor="#475569"
+                    editable={!payingMethod && !waiting} />
+                  <TouchableOpacity style={styles.payFullBtn} onPress={() => setPayAmt(String(due))}>
+                    <Text style={styles.payFullBtnText}>Full {inr(due)}</Text>
+                  </TouchableOpacity>
+                </View>
+                {Number(payAmt) > 0 && Number(payAmt) < due && (
+                  <Text style={styles.partPayNote}>Part payment · {inr(due - Number(payAmt))} will stay due</Text>
+                )}
                 <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                   <TouchableOpacity style={[styles.payBtn, { backgroundColor: '#16A34A' }]}
                     onPress={() => payCashUpi('cash')} disabled={!!payingMethod || waiting}>
@@ -1125,6 +1153,10 @@ const styles = StyleSheet.create({
   manageCreditLink: { color: '#F97316', fontSize: 13, fontWeight: '700' },
   paySection:     { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   paySectionLbl:  { color: '#475569', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
+  payAmtInput:    { flex: 1, maxWidth: 140, backgroundColor: '#F8FAFC', color: '#0F172A', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, fontSize: 13, fontWeight: '700', borderWidth: 1, borderColor: '#CBD5E1' },
+  payFullBtn:     { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1' },
+  payFullBtnText: { color: '#475569', fontSize: 12, fontWeight: '700' },
+  partPayNote:    { color: '#B45309', fontSize: 11, fontWeight: '600', marginBottom: 8 },
   payBtn:         { flex: 1, padding: 11, borderRadius: 10, alignItems: 'center' },
   payBtnText:     { color: '#fff', fontWeight: '700', fontSize: 12 },
   payBtnOutline:      { backgroundColor: '#17B9A115', borderWidth: 1.5, borderColor: '#17B9A1' },

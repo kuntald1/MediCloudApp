@@ -91,6 +91,7 @@ export default function FranchiseBills() {
 
   const [orgId, setOrgId]           = useState<number | null>(null);
   const [barcode, setBarcode]       = useState('');
+  const [patientName, setPatientName] = useState('');
   const [fromDate, setFromDate]     = useState('');
   const [toDate, setToDate]         = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -119,13 +120,14 @@ export default function FranchiseBills() {
     } catch {}
   }, []);
 
-  const fetchBills = useCallback(async (o?: number | null, bc?: string, from?: string, to?: string) => {
+  const fetchBills = useCallback(async (o?: number | null, bc?: string, from?: string, to?: string, name?: string) => {
     try {
       const params = new URLSearchParams();
-      if (o)          params.set('organization_id', String(o));
-      if (bc?.trim()) params.set('barcode', bc.trim());
-      if (from)       params.set('date_from', from);
-      if (to)         params.set('date_to', to);
+      if (o)            params.set('organization_id', String(o));
+      if (bc?.trim())   params.set('barcode', bc.trim());
+      if (name?.trim()) params.set('patient_name', name.trim());
+      if (from)         params.set('date_from', from);
+      if (to)           params.set('date_to', to);
       const qs  = params.toString();
       const res = await fetch(`${API_BASE}/api/billing/bills${qs ? `?${qs}` : ''}`, { headers: authHeader() });
       const data = await res.json();
@@ -136,13 +138,13 @@ export default function FranchiseBills() {
 
   useEffect(() => { fetchOrgs(); fetchBills(); }, []); // eslint-disable-line
 
-  const onRefresh = () => { setRefreshing(true); fetchBills(orgId, barcode, fromDate, toDate); };
-  const applyFilters = () => { setLoading(true); fetchBills(orgId, barcode, fromDate, toDate); };
+  const onRefresh = () => { setRefreshing(true); fetchBills(orgId, barcode, fromDate, toDate, patientName); };
+  const applyFilters = () => { setLoading(true); fetchBills(orgId, barcode, fromDate, toDate, patientName); };
   const clearFilters = () => {
-    setOrgId(null); setBarcode(''); setFromDate(''); setToDate('');
+    setOrgId(null); setBarcode(''); setPatientName(''); setFromDate(''); setToDate('');
     setLoading(true); fetchBills();
   };
-  const activeFilterCount = [orgId != null, !!barcode.trim(), !!fromDate, !!toDate].filter(Boolean).length;
+  const activeFilterCount = [orgId != null, !!barcode.trim(), !!patientName.trim(), !!fromDate, !!toDate].filter(Boolean).length;
 
   // Jump straight to the bill a specific accession number belongs to
   const searchByAccession = async () => {
@@ -328,6 +330,12 @@ export default function FranchiseBills() {
                 <TextInput style={styles.input} value={barcode} onChangeText={setBarcode}
                   placeholder="barcode" placeholderTextColor="#475569" autoCapitalize="characters" />
               </View>
+            </View>
+            <View style={{ marginTop: 10 }}>
+              <Text style={styles.fieldLabel}>Patient Name</Text>
+              <TextInput style={styles.input} value={patientName} onChangeText={setPatientName}
+                placeholder="name" placeholderTextColor="#475569"
+                returnKeyType="search" onSubmitEditing={applyFilters} />
             </View>
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
               <View style={{ flex: 1 }}>
