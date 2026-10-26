@@ -115,9 +115,10 @@ export default function NewBill() {
   // Effective per-org pricing (Group/Org Pricing overrides) — keyed by test_id
   const [effectivePrices, setEffectivePrices] = useState<Record<number, { price: number; mrp: number; source: string }>>({});
   const [effectiveGroupPrices, setEffectiveGroupPrices] = useState<Record<number, { price: number; mrp: number; source: string }>>({});
-  // Per-test accession numbers — keyed by test_id, editable
-  const [accessions, setAccessions] = useState<Record<number, string>>({});
-  const [touchedAccessionIds, setTouchedAccessionIds] = useState<Set<number>>(new Set());
+  // Accession numbers keyed by TUBE, not by test: one physical tube carries one
+  // barcode, so every test drawn into it shares a single number. Editable.
+  const [accessions, setAccessions] = useState<Record<string, string>>({});
+  const [touchedAccessionIds, setTouchedAccessionIds] = useState<Set<string>>(new Set());
   const [accessionsLoading, setAccessionsLoading] = useState(false);
   const [printing, setPrinting] = useState(false);
 
@@ -193,15 +194,18 @@ export default function NewBill() {
   const tubeMap  = new Map(tubes.map(tb => [tb.id, tb]));
   const testById = new Map(tests.map(t => [t.id, t]));
 
+  // Which key a test's accession number is allocated against. Must mirror the
+  // backend's own grouping (routers/billing.py _tube_key_map) or the preview
+  // won't match what gets saved. A test with no tube set can't be grouped.
+  const tubeKeyForTest = (id: number) => {
+    const t = testById.get(id);
+    return t?.sample_tube_id != null ? `tube:${t.sample_tube_id}` : `test:${id}`;
+  };
+  const accForTest = (id: number) => accessions[tubeKeyForTest(id)] ?? '';
+
   const groupMemberIds = new Set(
     Object.values(pickedGroups).flatMap(g => (g.test_ids ?? g.tests.map(t => t.id)))
   );
-  // Every individual test in the current bill — standalone picks + every member of every picked group.
-  const allIndividualTestIds = Array.from(new Set([
-    ...Object.keys(pickedTests).map(Number),
-    ...groupMemberIds,
-  ]));
-
   const groupSubtotal = Object.values(pickedGroups).reduce((s, g) => s + (effectiveGroupPrices[g.id]?.price ?? g.price ?? 0), 0);
   const testSubtotal  = Object.entries(pickedTests).reduce(
     (s, [tid, t]) => s + (effectivePrices[Number(tid)]?.price ?? t.price ?? 0), 0
@@ -309,10 +313,33 @@ export default function NewBill() {
     ...Object.values(pickedGroups).flatMap(g => g.test_ids ?? g.tests.map(mt => mt.id)),
     ...Object.keys(pickedTests).map(Number),
   ];
-  const allIdsKey = allIndividualTestIds.slice().sort((a, b) => a - b).join(',');
+
+  const nameForTest = (id: number) =>
+    testById.get(id)?.name
+    ?? Object.values(pickedGroups).flatMap(g => g.tests ?? []).find(mt => mt.id === id)?.name
+    ?? `Test #${id}`;
+
+  // One row per physical tube — the unit an accession number, a label and a barcode belong to.
+  const sampleGroups = (() => {
+    const byKey = new Map<string, { key: string; tube: Tube | null; testIds: number[]; names: string[] }>();
+    orderedIndividualIds.forEach(id => {
+      const k = tubeKeyForTest(id);
+      if (!byKey.has(k)) {
+        const t = testById.get(id);
+        const tb = t?.sample_tube_id != null ? tubeMap.get(t.sample_tube_id) ?? null : null;
+        byKey.set(k, { key: k, tube: tb, testIds: [], names: [] });
+      }
+      const g = byKey.get(k)!;
+      g.testIds.push(id);
+      g.names.push(nameForTest(id));
+    });
+    return Array.from(byKey.values());
+  })();
+  const sampleKeys = sampleGroups.map(g => g.key);
+  const sampleKeysKey = sampleKeys.join(',');
   useEffect(() => {
-    if (!patient?.barcode || orderedIndividualIds.length === 0) {
-      if (orderedIndividualIds.length === 0) { setAccessions({}); setTouchedAccessionIds(new Set()); }
+    if (!patient?.barcode || sampleKeys.length === 0) {
+      if (sampleKeys.length === 0) { setAccessions({}); setTouchedAccessionIds(new Set()); }
       return;
     }
     let cancelled = false;
@@ -320,7 +347,7 @@ export default function NewBill() {
       setAccessionsLoading(true);
       try {
         const res = await fetch(
-          `${API_BASE}/api/billing/next-accessions?barcode=${encodeURIComponent(patient.barcode)}&count=${orderedIndividualIds.length}`,
+          `${API_BASE}/api/billing/next-accessions?barcode=${encodeURIComponent(patient.barcode)}&count=${sampleKeys.length}`,
           { headers: authHeader() }
         );
         if (!res.ok) return;
@@ -328,13 +355,13 @@ export default function NewBill() {
         const codes: string[] = Array.isArray(data?.accessions) ? data.accessions : [];
         if (cancelled) return;
         setAccessions(prev => {
-          const next: Record<number, string> = {};
+          const next: Record<string, string> = {};
           let codeIdx = 0;
-          orderedIndividualIds.forEach(id => {
-            if (touchedAccessionIds.has(id) && prev[id]) {
-              next[id] = prev[id]; // keep the person's manual edit as-is
+          sampleKeys.forEach(k => {
+            if (touchedAccessionIds.has(k) && prev[k]) {
+              next[k] = prev[k]; // keep the person's manual edit as-is
             } else if (codes[codeIdx]) {
-              next[id] = codes[codeIdx];
+              next[k] = codes[codeIdx];
               codeIdx += 1;
             }
           });
@@ -345,7 +372,7 @@ export default function NewBill() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patient?.barcode, allIdsKey]);
+  }, [patient?.barcode, sampleKeysKey]);
 
   // Refresh bill from API
   const refreshBill = useCallback(async (id: number) => {
@@ -485,20 +512,19 @@ export default function NewBill() {
 
     // Client-side duplicate-accession check — mirrors the backend's own validation
     // so the person gets the same clear message without a round trip.
-    const seen: Record<string, number> = {};
-    for (const id of allIndividualTestIds) {
-      const code = (accessions[id] ?? '').trim();
+    const seen = new Set<string>();
+    for (const g of sampleGroups) {
+      const code = (accessions[g.key] ?? '').trim();
+      const label = g.tube?.name ?? g.names[0] ?? 'this sample';
       if (!code) {
-        const name = testById.get(id)?.name ?? 'this test';
-        Alert.alert('Missing accession number', `Please enter an accession number for ${name}.`);
+        Alert.alert('Missing accession number', `Please enter an accession number for the ${label} sample.`);
         return;
       }
-      if (seen[code] !== undefined) {
-        const name = testById.get(id)?.name ?? 'this test';
-        Alert.alert('Duplicate accession number', `Accession number '${code}' is already in use — please choose a different one for ${name}.`);
+      if (seen.has(code)) {
+        Alert.alert('Duplicate accession number', `Accession number '${code}' is already in use — please choose a different one for the ${label} sample.`);
         return;
       }
-      seen[code] = id;
+      seen.add(code);
     }
 
     setSaving(true);
@@ -511,7 +537,9 @@ export default function NewBill() {
         discount_type:  allowDiscount ? (discType || null) : null,
         discount_value: allowDiscount ? (Number(discVal) || 0) : 0,
         on_credit: isFranchise ? !!orgId : (onCredit && !!orgId),
-        accessions: Object.fromEntries(allIndividualTestIds.map(id => [String(id), (accessions[id] ?? '').trim()])),
+        // the API still takes {test_id: accession}; every test on a tube carries that tube's number
+        accessions: Object.fromEntries(sampleGroups.flatMap(g =>
+          g.testIds.map(id => [String(id), (accessions[g.key] ?? '').trim()]))),
       };
       const res = await fetch(`${API_BASE}/api/billing/bills`, {
         method: 'POST',
@@ -536,27 +564,33 @@ export default function NewBill() {
     setAccessions({}); setEffectivePrices({}); setTouchedAccessionIds(new Set());
   };
 
-  // Print a single sample's barcode label
-  const printOneSample = async (testId: number, testName: string) => {
-    const code = accessions[testId];
-    if (!code) { Alert.alert('No accession number yet', `Enter or wait for an accession number for ${testName} before printing.`); return; }
+  // Print a single tube's barcode label
+  const printOneSample = async (g: { key: string; tube: Tube | null; names: string[] }) => {
+    const code = accessions[g.key];
+    const label = g.tube?.name ?? g.names[0] ?? 'this sample';
+    if (!code) { Alert.alert('No accession number yet', `Enter or wait for an accession number for the ${label} sample before printing.`); return; }
     setPrinting(true);
     try {
-      const html = await buildLabelsHtml([{ patientName: patient?.patient_name ?? 'Patient', testName, accession: code }]);
+      const html = await buildLabelsHtml([{
+        patientName: patient?.patient_name ?? 'Patient',
+        testName: (g.tube?.name ? `${g.tube.name} · ` : '') + g.names.join(', '),
+        accession: code,
+      }]);
       await Print.printAsync({ html });
     } catch (e: any) {
       Alert.alert('Print failed', e.message ?? 'Could not generate the barcode label');
     } finally { setPrinting(false); }
   };
 
-  // Print every sample label in the current bill in one go
+  // Print every tube's label in the current bill in one go — a tube carrying
+  // several tests is still one sticker.
   const printAllSamples = async () => {
-    const items: LabelItem[] = orderedIndividualIds
-      .filter(id => accessions[id])
-      .map(id => ({
+    const items: LabelItem[] = sampleGroups
+      .filter(g => accessions[g.key])
+      .map(g => ({
         patientName: patient?.patient_name ?? 'Patient',
-        testName: testById.get(id)?.name ?? 'Test',
-        accession: accessions[id],
+        testName: (g.tube?.name ? `${g.tube.name} · ` : '') + g.names.join(', '),
+        accession: accessions[g.key],
       }));
     if (items.length === 0) { Alert.alert('Nothing to print', 'Add tests and wait for accession numbers to be generated first.'); return; }
     setPrinting(true);
@@ -722,18 +756,9 @@ export default function NewBill() {
                                   </View>
                                 )}
                               </View>
-                              <View style={styles.accRow}>
-                                <TextInput
-                                  style={styles.accInputCompact}
-                                  value={accessions[mid] ?? ''}
-                                  onChangeText={v => { setAccessions(prev => ({ ...prev, [mid]: v.toUpperCase() })); setTouchedAccessionIds(prev => new Set(prev).add(mid)); }}
-                                  placeholder="Accession no." placeholderTextColor="#94A3B8"
-                                  autoCapitalize="characters"
-                                />
-                                <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(mid, memberName)} disabled={printing}>
-                                  <Text style={styles.printOneBtnIcon}>🖨</Text>
-                                </TouchableOpacity>
-                              </View>
+                              {accForTest(mid) !== '' && (
+                                <Text style={styles.accRefText}>{accForTest(mid)}</Text>
+                              )}
                             </View>
                           </View>
                         );
@@ -763,21 +788,44 @@ export default function NewBill() {
                           {overridden && <Text style={styles.overriddenTag}>group price</Text>}
                         </View>
                       </View>
-                      <View style={styles.accRow}>
-                        <TextInput
-                          style={styles.accInputCompact}
-                          value={accessions[id] ?? ''}
-                          onChangeText={v => { setAccessions(prev => ({ ...prev, [id]: v.toUpperCase() })); setTouchedAccessionIds(prev => new Set(prev).add(id)); }}
-                          placeholder="Accession no." placeholderTextColor="#94A3B8"
-                          autoCapitalize="characters"
-                        />
-                        <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(id, t.name)} disabled={printing}>
-                          <Text style={styles.printOneBtnIcon}>🖨</Text>
-                        </TouchableOpacity>
-                      </View>
+                      {accForTest(id) !== '' && (
+                        <Text style={styles.accRefText}>{accForTest(id)}</Text>
+                      )}
                     </View>
                   );
                 })}
+                {sampleGroups.length > 0 && (
+                  <View style={styles.sampleBlock}>
+                    <Text style={styles.sampleBlockLabel}>SAMPLES TO COLLECT ({sampleGroups.length})</Text>
+                    {sampleGroups.map(g => (
+                      <View key={g.key} style={styles.sampleRow}>
+                        <View style={styles.memberTopLine}>
+                          {g.tube ? (
+                            <View style={styles.tubeChip}>
+                              <View style={[styles.tubeDot, { backgroundColor: tubeDotColor(g.tube.color) }]} />
+                              <Text style={styles.tubeChipText}>{g.tube.name}</Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.noTubeText}>No tube set</Text>
+                          )}
+                          <Text style={styles.sampleNames} numberOfLines={1}>{g.names.join(', ')}</Text>
+                        </View>
+                        <View style={styles.accRow}>
+                          <TextInput
+                            style={styles.accInputCompact}
+                            value={accessions[g.key] ?? ''}
+                            onChangeText={v => { setAccessions(prev => ({ ...prev, [g.key]: v.toUpperCase() })); setTouchedAccessionIds(prev => new Set(prev).add(g.key)); }}
+                            placeholder="Accession no." placeholderTextColor="#94A3B8"
+                            autoCapitalize="characters"
+                          />
+                          <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(g)} disabled={printing}>
+                            <Text style={styles.printOneBtnIcon}>🖨</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
                 <View style={styles.divider} />
 
                 {/* Discount — lab admin only */}
@@ -1051,6 +1099,12 @@ const styles = StyleSheet.create({
   tubeChip:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, gap: 5 },
   tubeDot:        { width: 8, height: 8, borderRadius: 4 },
   tubeChipText:   { color: '#64748B', fontSize: 10, fontWeight: '600' },
+  accRefText:     { color: '#94A3B8', fontSize: 11, marginTop: 3 },
+  sampleBlock:    { marginTop: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
+  sampleBlockLabel: { color: '#64748B', fontSize: 10, fontWeight: '700', letterSpacing: 0.6, marginBottom: 8 },
+  sampleRow:      { marginBottom: 10 },
+  sampleNames:    { color: '#94A3B8', fontSize: 11, flex: 1 },
+  noTubeText:     { color: '#B45309', fontSize: 10, fontWeight: '600' },
   accInput:       { backgroundColor: '#F8FAFC', color: '#0F172A', paddingHorizontal: 12, paddingVertical: 9, borderRadius: 8, fontSize: 13, fontWeight: '600', borderWidth: 1, borderColor: '#17B9A155' },
   accGenRow:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   accGenText:     { color: '#64748B', fontSize: 12 },
