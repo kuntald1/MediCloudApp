@@ -97,51 +97,44 @@ export default function ChangeStatus() {
     { text: 'Reject', style: 'destructive', onPress: () => advance('sample_rejected') },
   ]);
 
-  // ── Scan Mode: every scan moves that sample straight to Received —
-  // but ONLY if it's currently Collected. Anything further along
+  // ── Scan Mode: every scan moves that whole tube straight to Received —
+  // but ONLY the tests currently Collected. Anything further along
   // (tested, validated, reported, ...) is left untouched.
   const handleScan = async (rawCode?: string) => {
     const code = (rawCode ?? scanCode).trim();
     if (!code) return;
     setScanBusy(true);
     try {
-      // The confirmed API contract is barcode=X **or** accession_number=X, never both
-      // together (sending both was silently returning zero matches for every scan,
-      // since per-test accession codes never equal the patient-level barcode).
-      // Try accession_number first — that's what's printed on per-test sample
-      // labels, which is what Scan Mode is built around — then fall back to a
-      // patient-barcode lookup for scanner-gun / manual-entry cases.
-      let match: any = null;
-      const accRes = await fetch(`${API_BASE}/api/sample-status/search?accession_number=${encodeURIComponent(code)}`, { headers: authHeader() });
-      const accData = await accRes.json().catch(() => []);
-      match = Array.isArray(accData) ? accData[0] : null;
+      // One accession number belongs to one TUBE, and a tube can carry several tests
+      // (HDL + LDL + Total Cholesterol all on one Serum tube), so a single scan has to
+      // receive every test drawn into it. /scan does exactly that server-side in one
+      // call: it matches the accession label first, falls back to the patient barcode
+      // for scanner-gun / manual entry, and moves only the 'collected' ones — anything
+      // further along comes back under 'skipped', untouched. (Searching and advancing
+      // by hand from here would only ever catch the first test on the tube.)
+      const res = await fetch(`${API_BASE}/api/sample-status/scan`, {
+        method: 'POST',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const updated: any[] = Array.isArray(data?.updated) ? data.updated : [];
+      const skipped: any[] = Array.isArray(data?.skipped) ? data.skipped : [];
 
-      if (!match) {
-        const bcRes = await fetch(`${API_BASE}/api/sample-status/search?barcode=${encodeURIComponent(code)}`, { headers: authHeader() });
-        const bcData = await bcRes.json().catch(() => []);
-        match = Array.isArray(bcData) ? bcData[0] : null;
-      }
-
-      if (!match) {
-        setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'not_found', detail: 'Not found' }, ...prev].slice(0, 30));
-      } else if (match.status === 'collected') {
-        const advRes  = await fetch(`${API_BASE}/api/sample-status/advance`, {
-          method: 'POST',
-          headers: { ...authHeader(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ item_ids: [match.id], status: 'received' }),
-        });
-        if (advRes.ok) {
-          const advData = await advRes.json().catch(() => ({}));
-          if (advData.updated) {
-            setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'advanced', detail: `${match.patient_name}${match.test_name ? ` (${match.test_name})` : ''} → Received` }, ...prev].slice(0, 30));
-          } else {
-            setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'not_found', detail: 'Nothing was updated' }, ...prev].slice(0, 30));
-          }
-        } else {
-          setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'not_found', detail: 'Could not update' }, ...prev].slice(0, 30));
-        }
+      if (!res.ok) {
+        setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'not_found', detail: data?.detail ?? 'Not found' }, ...prev].slice(0, 30));
+      } else if (updated.length > 0) {
+        const who   = updated[0].patient_name ?? '';
+        const names = updated.map(u => u.test_name).filter(Boolean).join(', ');
+        const tail  = skipped.length > 0 ? ` · ${skipped.length} already further along` : '';
+        setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'advanced',
+          detail: `${who} · ${updated.length} test(s) → Received: ${names}${tail}` }, ...prev].slice(0, 30));
+      } else if (skipped.length > 0) {
+        const states = Array.from(new Set(skipped.map(s => s.status).filter(Boolean))).join(', ');
+        setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'skipped',
+          detail: `All ${skipped.length} test(s) already ${states} — no change` }, ...prev].slice(0, 30));
       } else {
-        setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'skipped', detail: `Already ${match.status} — no change` }, ...prev].slice(0, 30));
+        setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'not_found', detail: 'Nothing was updated' }, ...prev].slice(0, 30));
       }
     } catch (e: any) {
       setScanLog(prev => [{ id: `${Date.now()}`, code, outcome: 'not_found', detail: e.message ?? 'Error' }, ...prev].slice(0, 30));
@@ -249,8 +242,8 @@ export default function ChangeStatus() {
           {/* Scan Mode */}
           <View style={styles.scanCard}>
             <Text style={styles.scanHint}>
-              Every scan moves that sample straight to <Text style={{ fontWeight: '700', color: '#06B6D4' }}>Received</Text> — but
-              only if it's currently <Text style={{ fontWeight: '700', color: '#3B82F6' }}>Collected</Text>. Anything already
+              Each scan moves every test on that tube straight to <Text style={{ fontWeight: '700', color: '#06B6D4' }}>Received</Text> — but
+              only the ones currently <Text style={{ fontWeight: '700', color: '#3B82F6' }}>Collected</Text>. Anything already
               further along (tested, validated, reported...) is left untouched.
             </Text>
 
