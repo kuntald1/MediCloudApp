@@ -276,7 +276,12 @@ export default function Bills() {
     setEditingItemId(null); setEditValue('');
   };
 
+  // Once a sample is received (or later) only a lab admin may renumber it — the
+  // server enforces this too (and also locks it once a result exists).
+  const accLocked = (it: any) => !isAdmin && (it.status ?? 'collected') !== 'collected';
+
   const startEditAccession = (it: any) => {
+    if (accLocked(it)) { Alert.alert('Locked', 'Accession number is locked — the sample is already received or has a result. Ask a lab admin to change it.'); return; }
     setEditingItemId(it.id);
     setEditValue(it.accession_number ?? '');
   };
@@ -475,7 +480,7 @@ export default function Bills() {
                             <View style={styles.accRow}>
                               <TouchableOpacity onPress={() => startEditAccession(it)}>
                                 <View style={styles.accBadge}>
-                                  <Text style={styles.accBadgeText}>{it.accession_number}</Text>
+                                  <Text style={styles.accBadgeText}>{it.accession_number}{accLocked(it) ? '  🔒' : ''}</Text>
                                 </View>
                               </TouchableOpacity>
                               <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(it.accession_number, it.test_name)} disabled={printing}>

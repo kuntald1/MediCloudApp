@@ -172,7 +172,12 @@ export default function FranchiseBills() {
   const openBill = (b: Bill) => { setSel(b); setWaPhone(b.phone ?? ''); setIncludeLink(true); };
   const closeBill = () => { setSel(null); setEditingItemId(null); setEditValue(''); };
 
+  // Franchise logins are never lab admins: once a sample is received (or later) the
+  // number is locked here. The server enforces this too (and locks it once a result exists).
+  const accLocked = (it: any) => (it.status ?? 'collected') !== 'collected';
+
   const startEditAccession = (it: any) => {
+    if (accLocked(it)) { Alert.alert('Locked', 'Accession number is locked — the sample is already received or has a result. Ask a lab admin to change it.'); return; }
     setEditingItemId(it.id);
     setEditValue(it.accession_number ?? '');
   };
@@ -456,7 +461,7 @@ export default function FranchiseBills() {
                           <View style={styles.accRow}>
                             <TouchableOpacity onPress={() => startEditAccession(it)}>
                               <View style={styles.accBadge}>
-                                <Text style={styles.accBadgeText}>{it.accession_number}</Text>
+                                <Text style={styles.accBadgeText}>{it.accession_number}{accLocked(it) ? '  🔒' : ''}</Text>
                               </View>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(it.accession_number as string, it.test_name)} disabled={printing}>
