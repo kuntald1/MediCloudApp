@@ -16,6 +16,7 @@ interface Bill {
   phone: string | null; organization_id: number | null; organization_name: string | null;
   subtotal: number; discount_type: string | null; discount_value: number; discount_amount: number;
   total: number; paid: number; status: string; created_at: string;
+  collected_by_name?: string | null; branch_name?: string | null;
   items: BillItem[]; payments: any[];
 }
 interface Org { id: number; name: string; }
@@ -290,6 +291,11 @@ export default function FranchiseBills() {
         </View>
         <Text style={styles.patient}>{b.patient_name} <Text style={styles.barcode}>· {b.barcode}</Text></Text>
         {!!b.organization_name && <Text style={styles.org}>🏥 {b.organization_name}</Text>}
+        {!!(b.collected_by_name || b.branch_name) && (
+          <Text style={styles.collectedBy}>
+            🧑‍🔬 {b.collected_by_name || '—'}{b.branch_name ? `  ·  ${b.branch_name}` : ''}
+          </Text>
+        )}
         <View style={styles.amtRow}>
           <View><Text style={styles.amtLabel}>Total</Text><Text style={styles.amtVal}>{inr(b.total)}</Text></View>
           <View><Text style={styles.amtLabel}>Paid</Text><Text style={[styles.amtVal, { color: '#10B981' }]}>{inr(b.paid)}</Text></View>
@@ -542,6 +548,7 @@ const styles = StyleSheet.create({
   card:           { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   cardTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   billNo:         { color: '#0F172A', fontSize: 15, fontWeight: 'bold' },
+  collectedBy:    { color: '#0D9488', fontSize: 11, marginTop: 3 },
   badge:          { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   badgeText:      { fontSize: 10, fontWeight: '700' },
   patient:        { color: '#0F172A', fontSize: 13, marginTop: 6 },

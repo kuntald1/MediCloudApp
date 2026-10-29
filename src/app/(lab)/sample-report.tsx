@@ -140,6 +140,7 @@ export default function SampleReport() {
         <Text style={styles.name}>{r.patient_name}</Text>
         <Text style={styles.meta}>👤 {r.age}y / {r.gender}  ·  🩺 {r.referring_doctor ?? '—'}</Text>
         <Text style={styles.meta}>🏢 {r.franchise} · {r.branch}</Text>
+        {!!r.collected_by && <Text style={[styles.meta, { color: '#0D9488' }]}>🧑‍🔬 {r.collected_by}</Text>}
         <View style={styles.amtRow}>
           <Text style={styles.amtItem}>Billed <Text style={styles.amtVal}>{inr(r.billed)}</Text></Text>
           <Text style={styles.amtItem}>Collected <Text style={[styles.amtVal, { color: '#10B981' }]}>{inr(r.collected)}</Text></Text>

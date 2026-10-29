@@ -32,6 +32,7 @@ interface Patient {
   id: number; barcode: string; patient_name: string;
   age: number; gender: string; doctor_name: string;
   abha_number: string | null; status: string;
+  collected_by_name?: string | null; branch_name?: string | null; franchise_name?: string | null;
   created_at: string; tests_summary: string[]; phone: string | null;
   referral_doctor_id?: number | null;
   registered_franchise_id?: number | null;
@@ -408,7 +409,12 @@ export default function Patients() {
           <Text style={styles.meta}>👤 {p.age}y / {p.gender}</Text>
           <Text style={styles.dot}>·</Text>
           <Text style={styles.meta}>🩺 {p.doctor_name}</Text>
-          {p.abha_number && <><Text style={styles.dot}>·</Text><Text style={[styles.meta, { color: '#10B981' }]}>ABHA ✓</Text></>}
+        </View>
+        {/* who this patient belongs to and who collected the sample */}
+        <View style={styles.metaRow}>
+          <Text style={styles.meta}>🏢 {p.franchise_name || 'Direct / Walk-in'}</Text>
+          {!!p.branch_name && <><Text style={styles.dot}>·</Text><Text style={styles.meta}>{p.branch_name}</Text></>}
+          {!!p.collected_by_name && <><Text style={styles.dot}>·</Text><Text style={[styles.meta, { color: '#0D9488' }]}>🧑‍🔬 {p.collected_by_name}</Text></>}
         </View>
         <View style={styles.testsRow}>
           {p.tests_summary.map((t, i) => <View key={i} style={styles.testChip}><Text style={styles.testChipText}>{t}</Text></View>)}

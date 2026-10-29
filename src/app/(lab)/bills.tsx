@@ -72,6 +72,7 @@ interface Bill {
   id: number; bill_no: string; patient_name: string; barcode: string;
   total: number; paid: number; status: string; created_at: string;
   organization_name?: string; discount_amount?: number; subtotal?: number;
+  collected_by_name?: string | null; branch_name?: string | null;
   items?: any[]; payments?: any[]; phone?: string | null;
   cancel_reason?: string | null; cancelled_at?: string | null;
 }
@@ -361,6 +362,11 @@ export default function Bills() {
         </View>
         <Text style={styles.patName}>{b.patient_name}</Text>
         <Text style={styles.barcode}>{b.barcode}</Text>
+        {!!(b.collected_by_name || b.branch_name) && (
+          <Text style={styles.collectedBy}>
+            🧑‍🔬 {b.collected_by_name || '—'}{b.branch_name ? `  ·  ${b.branch_name}` : ''}
+          </Text>
+        )}
         <View style={styles.amtRow}>
           <View><Text style={styles.amtLabel}>Total</Text><Text style={styles.amtVal}>{inr(b.total)}</Text></View>
           <View><Text style={styles.amtLabel}>Paid</Text><Text style={[styles.amtVal, { color: '#10B981' }]}>{inr(b.paid)}</Text></View>
@@ -643,6 +649,7 @@ const styles = StyleSheet.create({
   cardCancelled:   { opacity: 0.55 },
   cardRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   billNo:          { color: '#0F172A', fontSize: 14, fontWeight: 'bold' },
+  collectedBy:     { color: '#0D9488', fontSize: 11, marginTop: 2 },
   billNoCancelled: { textDecorationLine: 'line-through', color: '#64748B' },
   cancelledBox:    { backgroundColor: '#64748B14', borderRadius: 8, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: '#64748B40' },
   cancelledTitle:  { color: '#475569', fontSize: 13.5, fontWeight: '800' },
