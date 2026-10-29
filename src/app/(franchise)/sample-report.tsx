@@ -42,6 +42,7 @@ export default function SampleReport() {
   // an explicit franchise_id param, it does not auto-scope by auth token.
   const [franchiseId, setFranchiseId] = useState<number | null>(null);
   const [barcode, setBarcode]   = useState('');
+  const [patientName, setPatientName] = useState('');
   const [status, setStatus]     = useState('');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [fromDate, setFromDate] = useState('');
@@ -100,6 +101,7 @@ export default function SampleReport() {
       const params = new URLSearchParams();
       params.set('franchise_id', String(franchiseId));
       if (barcode.trim())    params.set('barcode', barcode.trim());
+      if (patientName.trim()) params.set('patient_name', patientName.trim());
       if (status.trim())     params.set('status', status.trim());
       if (fromDate.trim())   params.set('date_from', fromDate.trim());
       if (toDate.trim())     params.set('date_to', toDate.trim());
@@ -113,7 +115,7 @@ export default function SampleReport() {
       setKpis({ patients: list.length, billed, collected, balance: billed - collected });
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [franchiseId, barcode, status, fromDate, toDate]);
+  }, [franchiseId, barcode, patientName, status, fromDate, toDate]);
 
   // Resolve the logged-in user's own franchise (same pattern as the franchise dashboard)
   useEffect(() => {
@@ -160,6 +162,10 @@ export default function SampleReport() {
       {/* Filters */}
       <View style={styles.filterCol}>
         <View style={styles.filterBar}>
+          <TextInput style={[styles.filterInput, { flex: 1 }]} value={patientName} onChangeText={setPatientName}
+            placeholder="Patient name..." placeholderTextColor="#475569" />
+        </View>
+        <View style={styles.filterBar}>
           <TextInput style={[styles.filterInput, { flex: 2 }]} value={barcode} onChangeText={setBarcode}
             placeholder="Barcode..." placeholderTextColor="#475569" />
           <TouchableOpacity style={[styles.filterInput, { flex: 1.4, justifyContent: 'center' }]} onPress={() => setShowStatusPicker(true)}>
@@ -179,9 +185,9 @@ export default function SampleReport() {
         </TouchableOpacity>
 
         {/* Clear filters */}
-        {(fromDate || toDate || status || barcode) ? (
+        {(fromDate || toDate || status || barcode || patientName) ? (
           <TouchableOpacity style={styles.clearBtn} onPress={() => {
-            setFromDate(''); setToDate(''); setStatus(''); setBarcode('');
+            setFromDate(''); setToDate(''); setStatus(''); setBarcode(''); setPatientName('');
             setTimeout(applyFilters, 100);
           }}>
             <Text style={styles.clearBtnText}>Clear all filters</Text>
