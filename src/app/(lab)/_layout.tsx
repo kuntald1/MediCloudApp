@@ -28,6 +28,36 @@ const LAB_MENUS = [
   { name: 'sample-report',     title: 'Sample Report',       icon: '📄' },
 ];
 
+// Menu Permissions (web) stores hidden items under the WEB sidebar's keys, so the
+// same setting drives both apps. Anything not listed here has no web counterpart
+// and is always shown.
+const MENU_KEY: Record<string, string> = {
+  dashboard: 'dashboard', patients: 'patients', 'change-status': 'status',
+  results: 'results', 'tat-report': 'tat', 'sample-tubes': 'tubes',
+  'org-groups': 'orggroups', organizations: 'organizations', branches: 'branches',
+  pricing: 'pricing', 'tests-catalog': 'testscatalog', departments: 'departments',
+  'users-staff': 'users', 'report-settings': 'reportsettings', 'new-bill': 'billing',
+  bills: 'bills', 'doctor-commission': 'doctors', 'history-needed': 'historyneeded',
+  'sample-report': 'samplereport',
+};
+
+// Which menus this login may see. Lab admin / super admin always get everything
+// (the server returns an empty list for them). Returns null until it has loaded,
+// so nothing is shown or redirected on a guess.
+function useVisibleMenus() {
+  const [hidden, setHidden] = useState<string[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_BASE}/api/admin/my-menu-hidden`, { headers: authHeader() })
+      .then(r => r.ok ? r.json() : { hidden_keys: [] })
+      .then(d => { if (alive) setHidden(Array.isArray(d?.hidden_keys) ? d.hidden_keys : []); })
+      .catch(() => { if (alive) setHidden([]); });
+    return () => { alive = false; };
+  }, []);
+  if (hidden === null) return null;
+  return LAB_MENUS.filter(m => !hidden.includes(MENU_KEY[m.name] ?? m.name));
+}
+
 // ── Notification Bells (shared across all lab screens) ──
 function NotificationBells() {
   const [history, setHistory]   = useState<any[]>([]);
@@ -118,7 +148,7 @@ function MenuButton() {
   );
 }
 
-function CustomDrawer({ navigation }: { navigation: any }) {
+function CustomDrawer({ navigation, menus }: { navigation: any; menus: typeof LAB_MENUS | null }) {
   const pathname = usePathname();
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
@@ -130,7 +160,7 @@ function CustomDrawer({ navigation }: { navigation: any }) {
         </View>
       </View>
       <ScrollView contentContainerStyle={{ paddingVertical: 8 }}>
-        {LAB_MENUS.map(menu => {
+        {(menus ?? []).map(menu => {
           const isActive = pathname.endsWith(menu.name);
           return (
             <TouchableOpacity key={menu.name}
@@ -150,10 +180,23 @@ function CustomDrawer({ navigation }: { navigation: any }) {
 }
 
 export default function LabLayout() {
+  const pathname = usePathname();
+  const menus = useVisibleMenus();
+
+  // The login screen always lands on /(lab)/dashboard, but most non-admin roles
+  // have Dashboard hidden — move them on to the first screen they can open.
+  useEffect(() => {
+    if (!menus) return;
+    const current = LAB_MENUS.find(m => pathname.endsWith(m.name));
+    if (current && !menus.some(m => m.name === current.name) && menus.length > 0) {
+      router.replace(`/(lab)/${menus[0].name}` as any);
+    }
+  }, [menus, pathname]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Drawer
-        drawerContent={(props) => <CustomDrawer {...props} />}
+        drawerContent={(props) => <CustomDrawer {...props} menus={menus} />}
         screenOptions={{
           headerStyle:      { backgroundColor: '#F8FAFC' },
           headerTintColor:  '#0F172A',
