@@ -53,6 +53,7 @@ export default function Results() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch]         = useState('');
+  const [patientName, setPatientName] = useState('');
   const [pdfLoading, setPdfLoading] = useState<number | null>(null);
   const [combineLoading, setCombineLoading] = useState(false);
 
@@ -77,15 +78,16 @@ export default function Results() {
 
   const fetchResults = useCallback(async () => {
     try {
-      const url = search.trim()
-        ? `${API_BASE}/api/results/?barcode=${encodeURIComponent(search.trim())}`
-        : `${API_BASE}/api/results/`;
+      const qs = new URLSearchParams();
+      if (search.trim())      qs.set('barcode', search.trim());
+      if (patientName.trim()) qs.set('patient_name', patientName.trim());
+      const url = qs.toString() ? `${API_BASE}/api/results/?${qs.toString()}` : `${API_BASE}/api/results/`;
       const res  = await fetch(url, { headers: authHeader() });
       const data = await res.json();
       setResults(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [search]);
+  }, [search, patientName]);
 
   useEffect(() => { setLoading(true); fetchResults(); }, [fetchResults]);
   const onRefresh = () => { setRefreshing(true); fetchResults(); };
@@ -335,6 +337,9 @@ export default function Results() {
       <View style={styles.searchWrap}>
         <TextInput style={styles.search} value={search} onChangeText={setSearch}
           placeholder="🔍  Search by barcode..." placeholderTextColor="#475569"
+          onSubmitEditing={fetchResults} returnKeyType="search" />
+        <TextInput style={[styles.search, { marginTop: 8 }]} value={patientName} onChangeText={setPatientName}
+          placeholder="🔍  Search by patient name..." placeholderTextColor="#475569"
           onSubmitEditing={fetchResults} returnKeyType="search" />
       </View>
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (

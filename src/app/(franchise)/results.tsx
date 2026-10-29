@@ -46,6 +46,7 @@ export default function FranchiseResults() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [barcode, setBarcode]       = useState('');
+  const [patientName, setPatientName] = useState('');
   const [patientId, setPatientId]   = useState('');
 
   // Detail modal
@@ -64,19 +65,20 @@ export default function FranchiseResults() {
       const params = new URLSearchParams();
       if (barcode.trim())   params.set('barcode', barcode.trim());
       if (patientId.trim()) params.set('patient_id', patientId.trim());
+      if (patientName.trim()) params.set('patient_name', patientName.trim());
       const res  = await fetch(`${API_BASE}/api/results/?${params.toString()}`, { headers: authHeader() });
       const data = await res.json();
       setResults(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [barcode, patientId]);
+  }, [barcode, patientId, patientName]);
 
   // Load only this franchise's reports on mount (server scopes it)
   useEffect(() => { fetchResults(); }, []); // eslint-disable-line
 
   const onRefresh = () => { setRefreshing(true); fetchResults(); };
   const applySearch = () => { setLoading(true); fetchResults(); };
-  const clearSearch = () => { setBarcode(''); setPatientId(''); setLoading(true); setTimeout(fetchResults, 50); };
+  const clearSearch = () => { setBarcode(''); setPatientId(''); setPatientName(''); setLoading(true); setTimeout(fetchResults, 50); };
 
   const showLockedAlert = () => {
     Alert.alert(
@@ -245,7 +247,7 @@ export default function FranchiseResults() {
     );
   };
 
-  const activeFilterCount = [barcode, patientId].filter(s => s.trim()).length;
+  const activeFilterCount = [barcode, patientId, patientName].filter(s => s.trim()).length;
 
   const renderItem = ({ item: r }: { item: Result }) => {
     const life  = r.lifecycle_status ?? r.status;
@@ -300,6 +302,12 @@ export default function FranchiseResults() {
               placeholder="e.g. 203" placeholderTextColor="#475569"
               onSubmitEditing={applySearch} returnKeyType="search" keyboardType="numeric" />
           </View>
+        </View>
+        <View style={{ marginTop: 8 }}>
+          <Text style={styles.fieldLabel}>Patient Name</Text>
+          <TextInput style={styles.input} value={patientName} onChangeText={setPatientName}
+            placeholder="e.g. Sujata" placeholderTextColor="#475569"
+            onSubmitEditing={applySearch} returnKeyType="search" />
         </View>
         <View style={{ flexDirection: 'row', marginTop: 10, gap: 10 }}>
           <TouchableOpacity style={styles.searchBtn} onPress={applySearch}>
