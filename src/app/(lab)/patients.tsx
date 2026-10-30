@@ -113,6 +113,11 @@ export default function Patients() {
   const currentUser = getUser();
   const isLabAdmin  = !currentUser || ['lab_admin','lab_staff'].includes(currentUser?.role ?? '');
   const isFranchise = currentUser?.role === 'franchise';
+  // A phlebotomist registers against his own branch only: Branch is pre-filled
+  // and read-only, and Franchise (B2B) is not his to choose.
+  const isPhlebotomist = currentUser?.role === 'phlebotomist';
+  const lockedBranchId: number | null = (isPhlebotomist && currentUser?.branch_id) ? Number(currentUser.branch_id) : null;
+  const isBranchLocked = lockedBranchId != null;
 
   // ── Fetch patients
   const fetchPatients = useCallback(async () => {
@@ -254,7 +259,7 @@ export default function Patients() {
     // logins have these locked/auto-set already, so the check doesn't apply
     // to them. Client-side only, mirroring web (the API itself still accepts
     // a patient with neither set).
-    if (!isFranchise && !form.branch_id && !form.franchise_id) {
+    if (!isFranchise && !isBranchLocked && !form.branch_id && !form.franchise_id) {
       setFormError('Select a Branch or a Franchise — at least one is required.');
       return;
     }
@@ -270,7 +275,7 @@ export default function Patients() {
         phone: form.phone || null,
         abha_number: form.abha_number || null,
         note: form.note || null,
-        branch_id: form.branch_id,
+        branch_id: isBranchLocked ? lockedBranchId : form.branch_id,
         registered_franchise_id: form.franchise_id,
         organization_id: form.organization_id,
         checklist: form.checklist,
@@ -668,23 +673,23 @@ export default function Patients() {
               placeholder="91-1234-5678-9012" placeholderTextColor="#475569" />
 
             {/* Branch — shown for all, locked for franchise */}
-            <Text style={styles.fieldLabel}>Branch{isFranchise ? ' (locked — set by franchise)' : ''}</Text>
+            <Text style={styles.fieldLabel}>Branch{isFranchise ? ' (locked — set by franchise)' : (isBranchLocked ? ' (locked — your branch)' : '')}</Text>
             <TouchableOpacity
-              style={[styles.fieldInput, isFranchise && { opacity: 0.5 }]}
-              onPress={() => !isFranchise && setShowBranchPicker(true)}
-              disabled={isFranchise}
+              style={[styles.fieldInput, (isFranchise || isBranchLocked) && { opacity: 0.5 }]}
+              onPress={() => !isFranchise && !isBranchLocked && setShowBranchPicker(true)}
+              disabled={isFranchise || isBranchLocked}
             >
-              <Text style={form.branch_id ? styles.fieldInputText : { color: '#475569' }}>
-                {branches.find(b => b.id === form.branch_id)?.name ?? '-- Select branch --'}
+              <Text style={(isBranchLocked || form.branch_id) ? styles.fieldInputText : { color: '#475569' }}>
+                {branches.find(b => b.id === (isBranchLocked ? lockedBranchId : form.branch_id))?.name ?? '-- Select branch --'}
               </Text>
             </TouchableOpacity>
 
             {/* Franchise — shown for all, locked for franchise users */}
             <Text style={styles.fieldLabel}>Franchise {isFranchise ? '(auto-set)' : '(also used for B2B billing)'}</Text>
             <TouchableOpacity
-              style={[styles.fieldInput, isFranchise && { opacity: 0.5 }]}
-              onPress={() => !isFranchise && setShowFranchisePicker(true)}
-              disabled={isFranchise}
+              style={[styles.fieldInput, (isFranchise || isPhlebotomist) && { opacity: 0.5 }]}
+              onPress={() => !isFranchise && !isPhlebotomist && setShowFranchisePicker(true)}
+              disabled={isFranchise || isPhlebotomist}
             >
               <Text style={form.franchise_id ? styles.fieldInputText : { color: '#475569' }}>
                 {franchises.find(f => f.id === form.franchise_id)?.name ?? '-- Direct / Walk-in --'}

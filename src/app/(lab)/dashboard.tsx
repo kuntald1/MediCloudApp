@@ -1,4 +1,4 @@
-import { authHeader, API_BASE } from '../../../src/utils/auth';
+import { authHeader, API_BASE, getUser } from '../../../src/utils/auth';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -30,10 +30,23 @@ export default function Dashboard() {
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker]     = useState(false);
 
+  // Only the two admin roles may look across branches; everyone else is pinned
+  // to their own branch, and a phlebotomist cannot pick a franchise either.
+  const currentUser  = getUser();
+  const role         = (currentUser?.role ?? '').toLowerCase();
+  const isAdmin      = role === 'super_admin' || role === 'lab_admin';
+  const isPhlebotomist = role === 'phlebotomist';
+  const myBranchId: number | null = (!isAdmin && currentUser?.branch_id) ? Number(currentUser.branch_id) : null;
+
   // Franchise filter
   const [franchises, setFranchises]         = useState<Franchise[]>([]);
   const [franchiseId, setFranchiseId]       = useState<number | null>(null);
   const [showFranchisePicker, setShowFranchisePicker] = useState(false);
+
+  // Branch filter
+  const [branches, setBranches]             = useState<Franchise[]>([]);
+  const [branchId, setBranchId]             = useState<number | null>(myBranchId);
+  const [showBranchPicker, setShowBranchPicker] = useState(false);
 
   const fetchFranchises = useCallback(async () => {
     try {
@@ -41,14 +54,20 @@ export default function Dashboard() {
       const data = await res.json();
       setFranchises(Array.isArray(data) ? data : []);
     } catch {}
+    try {
+      const res  = await fetch(`${API_BASE}/api/admin/branches`, { headers: authHeader() });
+      const data = await res.json();
+      setBranches(Array.isArray(data) ? data : []);
+    } catch {}
   }, []);
 
-  const fetchDashboard = useCallback(async (from: string, to: string, fid: number | null) => {
+  const fetchDashboard = useCallback(async (from: string, to: string, fid: number | null, bid: number | null = null) => {
     try {
       const params = new URLSearchParams();
       params.set('date_from', from);
       params.set('date_to', to);
       if (fid != null) params.set('franchise_id', String(fid));
+      if (bid != null) params.set('branch_id', String(bid));
       const res  = await fetch(`${API_BASE}/api/reports2/dashboard?${params.toString()}`, { headers: authHeader() });
       const json = await res.json();
       setData(json);
@@ -57,23 +76,32 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { fetchFranchises(); }, [fetchFranchises]);
-  useEffect(() => { setLoading(true); fetchDashboard(fromDate, toDate, franchiseId); }, []); // eslint-disable-line
+  useEffect(() => { setLoading(true); fetchDashboard(fromDate, toDate, franchiseId, branchId); }, []); // eslint-disable-line
 
-  const onRefresh = () => { setRefreshing(true); fetchDashboard(fromDate, toDate, franchiseId); };
-  const applyFilters = () => { setQuickRange(null); setLoading(true); fetchDashboard(fromDate, toDate, franchiseId); };
+  const onRefresh = () => { setRefreshing(true); fetchDashboard(fromDate, toDate, franchiseId, branchId); };
+  const applyFilters = () => { setQuickRange(null); setLoading(true); fetchDashboard(fromDate, toDate, franchiseId, branchId); };
 
   const applyQuickRange = (r: Exclude<QuickRange, null>) => {
     const from = r === 'today' ? todayStr : r === '7d' ? daysAgo(6) : monthStart;
     setFromDate(from); setToDate(todayStr); setQuickRange(r);
-    setLoading(true); fetchDashboard(from, todayStr, franchiseId);
+    setLoading(true); fetchDashboard(from, todayStr, franchiseId, branchId);
   };
 
   const selectFranchise = (fid: number | null) => {
     setFranchiseId(fid);
     setShowFranchisePicker(false);
     setLoading(true);
-    fetchDashboard(fromDate, toDate, fid);
+    fetchDashboard(fromDate, toDate, fid, branchId);
   };
+
+  const selectBranch = (bid: number | null) => {
+    setBranchId(bid);
+    setShowBranchPicker(false);
+    setLoading(true);
+    fetchDashboard(fromDate, toDate, franchiseId, bid);
+  };
+
+  const branchName = branchId == null ? 'All Branches' : (branches.find(b => b.id === branchId)?.name ?? 'Selected');
 
   const franchiseName = franchiseId == null ? 'All Franchises' : (franchises.find(f => f.id === franchiseId)?.name ?? 'Selected');
 
@@ -93,8 +121,23 @@ export default function Dashboard() {
       {/* Franchise filter */}
       <View style={styles.filterBar}>
         <Text style={styles.filterLabel}>Franchise</Text>
-        <TouchableOpacity style={styles.franchiseBtn} onPress={() => setShowFranchisePicker(true)}>
+        <TouchableOpacity
+          style={[styles.franchiseBtn, isPhlebotomist && styles.franchiseBtnLocked]}
+          onPress={() => !isPhlebotomist && setShowFranchisePicker(true)}
+          disabled={isPhlebotomist}>
           <Text style={styles.franchiseBtnText} numberOfLines={1}>{franchiseName}</Text>
+          <Text style={styles.franchiseArrow}>▾</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Branch filter — admins can switch, everyone else is pinned to theirs */}
+      <View style={styles.filterBar}>
+        <Text style={styles.filterLabel}>Branch</Text>
+        <TouchableOpacity
+          style={[styles.franchiseBtn, !isAdmin && styles.franchiseBtnLocked]}
+          onPress={() => isAdmin && setShowBranchPicker(true)}
+          disabled={!isAdmin}>
+          <Text style={styles.franchiseBtnText} numberOfLines={1}>{branchName}</Text>
           <Text style={styles.franchiseArrow}>▾</Text>
         </TouchableOpacity>
       </View>
@@ -251,6 +294,30 @@ export default function Dashboard() {
         </View>
       </Modal>
 
+      {/* Branch picker modal */}
+      <Modal visible={showBranchPicker} transparent animationType="slide" onRequestClose={() => setShowBranchPicker(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Branch</Text>
+            <ScrollView style={{ maxHeight: 340 }}>
+              <TouchableOpacity style={[styles.patItem, branchId == null && styles.patItemSel]}
+                onPress={() => selectBranch(null)}>
+                <Text style={styles.patName}>All Branches</Text>
+              </TouchableOpacity>
+              {branches.map(b => (
+                <TouchableOpacity key={b.id} style={[styles.patItem, branchId === b.id && styles.patItemSel]}
+                  onPress={() => selectBranch(b.id)}>
+                  <Text style={styles.patName}>{b.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowBranchPicker(false)}>
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {showFromPicker && (
         <DateTimePicker value={fromDate ? new Date(fromDate) : new Date()} mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
@@ -270,6 +337,7 @@ const styles = StyleSheet.create({
   filterBar:       { paddingHorizontal: 12, paddingTop: 12 },
   filterLabel:     { color: '#94A3B8', fontSize: 11, fontWeight: '600', marginBottom: 6 },
   franchiseBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+  franchiseBtnLocked:{ backgroundColor: '#F1F5F9', opacity: 0.7 },
   franchiseBtnText:{ color: '#0F172A', fontSize: 13, flex: 1 },
   franchiseArrow:  { color: '#64748B', marginLeft: 8 },
   dateRow:         { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10 },
