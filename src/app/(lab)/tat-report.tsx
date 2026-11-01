@@ -9,25 +9,22 @@ import {
 const toYMD = (d: Date) => { const p = (n: number) => n.toString().padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 
 const STAGE_LABELS: Record<string, string> = {
-  wait_for_pickup: 'Wait for Pickup', transit: 'Transit', receipt_accessioning: 'Receipt & Accessioning',
-  testing: 'Testing', validation: 'Validation', reporting: 'Reporting',
+  collection_to_lab: 'Collection → Lab', testing: 'Testing', validation: 'Validation', reporting: 'Reporting',
 };
 const STAGE_LEGEND_LABELS: Record<string, string> = {
-  wait_for_pickup: 'Wait for pickup', transit: 'Transit', receipt_accessioning: 'Receipt + accessioning',
-  testing: 'Testing', validation: 'Validation', reporting: 'Reporting',
+  collection_to_lab: 'Collection → Lab', testing: 'Testing', validation: 'Validation', reporting: 'Reporting',
 };
 const STAGE_ICONS: Record<string, string> = {
-  wait_for_pickup: '📦', transit: '🚚', receipt_accessioning: '📥', testing: '🔬', validation: '✅', reporting: '📄',
+  collection_to_lab: '🚚', testing: '🔬', validation: '✅', reporting: '📄',
 };
 // Matches the color coding used on the web dashboard
 const STAGE_COLORS: Record<string, string> = {
-  wait_for_pickup: '#EF4444', transit: '#F59E0B', receipt_accessioning: '#3B82F6',
-  testing: '#10B981', validation: '#8B5CF6', reporting: '#64748B',
+  collection_to_lab: '#EF4444', testing: '#10B981', validation: '#8B5CF6', reporting: '#64748B',
 };
 const PHASE_COLORS: Record<string, string> = {
   pre_analytical: '#EF4444', analytical: '#10B981', post_analytical: '#8B5CF6',
 };
-const DEFAULT_STAGE_ORDER = ['wait_for_pickup', 'transit', 'receipt_accessioning', 'testing', 'validation', 'reporting'];
+const DEFAULT_STAGE_ORDER = ['collection_to_lab', 'testing', 'validation', 'reporting'];
 
 function fmtMin(m: number | null | undefined) {
   if (m == null) return '—';
