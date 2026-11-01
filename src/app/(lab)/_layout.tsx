@@ -4,7 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Modal, FlatList }
 import { router, usePathname, useNavigation } from 'expo-router';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Image } from 'expo-image';
-import { authHeader, API_BASE } from '../../../src/utils/auth';
+import { authHeader, API_BASE, getUser } from '../../../src/utils/auth';
 
 const LAB_MENUS = [
   { name: 'dashboard',         title: 'Dashboard',           icon: '📊' },
@@ -150,6 +150,9 @@ function MenuButton() {
 
 function CustomDrawer({ navigation, menus }: { navigation: any; menus: typeof LAB_MENUS | null }) {
   const pathname = usePathname();
+  const me = getUser();
+  const meName = me?.full_name || me?.email || '';
+  const meRole = (me?.role || '').replace(/_/g, ' ');
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
       <View style={[styles.drawerHeader, { flexDirection: 'row', alignItems: 'center', gap: 10 }]}>
@@ -159,6 +162,12 @@ function CustomDrawer({ navigation, menus }: { navigation: any; menus: typeof LA
           <Text style={styles.drawerRole}>Lab Portal v1.0</Text>
         </View>
       </View>
+      {!!meName && (
+        <View style={styles.drawerUser}>
+          <Text style={styles.drawerUserName} numberOfLines={1}>👤  {meName}</Text>
+          {!!meRole && <Text style={styles.drawerUserRole}>{meRole}</Text>}
+        </View>
+      )}
       <ScrollView contentContainerStyle={{ paddingVertical: 8 }}>
         {(menus ?? []).map(menu => {
           const isActive = pathname.endsWith(menu.name);
@@ -218,6 +227,9 @@ const styles = StyleSheet.create({
   drawerHeader:    { paddingTop: 56, paddingBottom: 18, paddingHorizontal: 18, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   drawerLogoImg:   { width: 34, height: 34 },
   drawerLogo:      { fontSize: 18, fontWeight: 'bold', color: '#0F172A' },
+  drawerUser:      { paddingHorizontal: 18, paddingVertical: 10, backgroundColor: '#F0FDFA', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  drawerUserName:  { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  drawerUserRole:  { fontSize: 12, color: '#17B9A1', marginTop: 2, textTransform: 'capitalize' },
   drawerRole:      { fontSize: 12, color: '#17B9A1', marginTop: 2 },
   menuBtn:         { paddingHorizontal: 14, paddingVertical: 6 },
   menuBtnIcon:     { fontSize: 22, color: '#0F172A' },
