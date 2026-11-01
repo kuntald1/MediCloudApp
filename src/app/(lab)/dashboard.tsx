@@ -35,8 +35,10 @@ export default function Dashboard() {
   const currentUser  = getUser();
   const role         = (currentUser?.role ?? '').toLowerCase();
   const isAdmin      = role === 'super_admin' || role === 'lab_admin';
+  // Staff flagged "all branches" in Users & Staff may switch branch too.
+  const canPickBranch = isAdmin || !!currentUser?.all_branches;
   const isPhlebotomist = role === 'phlebotomist';
-  const myBranchId: number | null = (!isAdmin && currentUser?.branch_id) ? Number(currentUser.branch_id) : null;
+  const myBranchId: number | null = (!canPickBranch && currentUser?.branch_id) ? Number(currentUser.branch_id) : null;
 
   // Franchise filter
   const [franchises, setFranchises]         = useState<Franchise[]>([]);
@@ -130,13 +132,13 @@ export default function Dashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* Branch filter — admins can switch, everyone else is pinned to theirs */}
+      {/* Branch filter — admins and "all branches" staff can switch, everyone else is pinned to theirs */}
       <View style={styles.filterBar}>
         <Text style={styles.filterLabel}>Branch</Text>
         <TouchableOpacity
-          style={[styles.franchiseBtn, !isAdmin && styles.franchiseBtnLocked]}
-          onPress={() => isAdmin && setShowBranchPicker(true)}
-          disabled={!isAdmin}>
+          style={[styles.franchiseBtn, !canPickBranch && styles.franchiseBtnLocked]}
+          onPress={() => canPickBranch && setShowBranchPicker(true)}
+          disabled={!canPickBranch}>
           <Text style={styles.franchiseBtnText} numberOfLines={1}>{branchName}</Text>
           <Text style={styles.franchiseArrow}>▾</Text>
         </TouchableOpacity>
