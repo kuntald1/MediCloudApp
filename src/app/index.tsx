@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, KeyboardAvoidingView,
-  Platform, Alert, ActivityIndicator,
+  Platform, ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Image } from 'expo-image';
@@ -24,7 +24,11 @@ function navFor(role?: string) {
 export default function LoginScreen() {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
+  const [showPw, setShowPw]     = useState(false);
+  const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  const pwRef = useRef<TextInput>(null);
+
   // Load any saved token into memory (so API calls work after Razorpay browser switch)
   // but ALWAYS show the login screen — no auto-navigation
   useEffect(() => {
@@ -32,10 +36,12 @@ export default function LoginScreen() {
   }, []);
 
   const handleLogin = async () => {
+    if (loading) return;
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter email and password');
+      setError('Please enter email and password');
       return;
     }
+    setError('');
     setLoading(true);
     try {
       const res  = await fetch(`${API_BASE}/api/auth/login`, {
@@ -45,13 +51,13 @@ export default function LoginScreen() {
       });
       const data = await res.json();
       if (!res.ok) {
-        Alert.alert('Login Failed', data.detail ?? data.message ?? 'Invalid credentials');
+        setError(data.detail ?? data.message ?? 'Invalid credentials');
         return;
       }
       await setAuth(data.access_token, data.user);
       router.replace(navFor(data.user?.role) as any);
     } catch (e: any) {
-      Alert.alert('Error', 'Could not connect to server. Check internet.');
+      setError('Could not connect to server. Check internet.');
     } finally {
       setLoading(false);
     }
@@ -59,46 +65,96 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient
-      colors={['#1a1f2e', '#0b6e5d', '#17b9a1']}
+      colors={['#eef6f4', '#e4f1fb', '#f3f8fd']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
     >
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.card}>
-            <View style={styles.header}>
-              <View style={styles.logoBadge}>
-                <Image source={require('../../assets/images/brand-logo.png')} style={styles.logoImg} contentFit="contain" />
-              </View>
-              <View>
-                <Text style={styles.title}>Healthycian</Text>
-                <Text style={styles.subtitle}>Laboratory Information System</Text>
-              </View>
+
+          <Image
+            source={require('../../assets/images/lab-illustration.png')}
+            style={styles.art}
+            contentFit="contain"
+          />
+
+          <View style={styles.panel}>
+            <Image
+              source={require('../../assets/images/healthycian-wordmark.png')}
+              style={styles.logo}
+              contentFit="contain"
+            />
+            <Text style={styles.subtitle}>Laboratory Information System</Text>
+
+            <Text style={styles.welcome}>Welcome !</Text>
+            <Text style={styles.welcomeSub}>Login to your account to continue</Text>
+
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldIcon}>✉</Text>
+              <TextInput
+                style={styles.input}
+                value={email}
+                onChangeText={t => { setEmail(t); setError(''); }}
+                placeholder="Email"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                autoComplete="email"
+                returnKeyType="next"
+                onSubmitEditing={() => pwRef.current?.focus()}
+              />
             </View>
 
-            <View style={styles.form}>
-              <Text style={styles.label}>EMAIL</Text>
-              <TextInput style={styles.input} value={email} onChangeText={setEmail}
-                placeholder="admin@healthycian.local" placeholderTextColor="#94A3B8"
-                autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
-
-              <Text style={[styles.label, { marginTop: 18 }]}>PASSWORD</Text>
-              <TextInput style={styles.input} value={password} onChangeText={setPassword}
-                placeholder="Enter password" placeholderTextColor="#94A3B8" secureTextEntry />
-
-              <TouchableOpacity style={[styles.loginBtnWrap, loading && { opacity: 0.7 }]}
-                onPress={handleLogin} disabled={loading} activeOpacity={0.88}>
-                <LinearGradient
-                  colors={['#f58519', '#f7a325']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.loginBtn}
-                >
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>Sign In</Text>}
-                </LinearGradient>
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldIcon}>🔒</Text>
+              <TextInput
+                ref={pwRef}
+                style={[styles.input, { paddingRight: 46 }]}
+                value={password}
+                onChangeText={t => { setPassword(t); setError(''); }}
+                placeholder="Password"
+                placeholderTextColor="#94A3B8"
+                secureTextEntry={!showPw}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="go"
+                onSubmitEditing={handleLogin}
+              />
+              <TouchableOpacity
+                style={styles.eye}
+                onPress={() => setShowPw(v => !v)}
+                hitSlop={10}
+                accessibilityLabel={showPw ? 'Hide password' : 'Show password'}
+              >
+                <Text style={styles.eyeText}>{showPw ? '🙈' : '👁'}</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Inline, next to the fields — an Alert popup hides the form and
+                has to be dismissed before the wrong value can be corrected. */}
+            {!!error && (
+              <View style={styles.errBox}>
+                <Text style={styles.errText}>⚠  {error}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.loginBtnWrap, loading && { opacity: 0.7 }]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.88}
+            >
+              <LinearGradient
+                colors={['#f58519', '#f7a325']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.loginBtn}
+              >
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>Sign In</Text>}
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
 
           <Text style={styles.footer}>Healthycian © 2026</Text>
@@ -110,28 +166,33 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container:    { flex: 1 },
-  scroll:       { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  card:         {
-    width: '100%', maxWidth: 400, backgroundColor: '#ffffff', borderRadius: 24,
-    padding: 28, shadowColor: '#000', shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.18, shadowRadius: 24, elevation: 10,
-  },
-  header:       { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 28 },
-  logoBadge:    {
-    width: 56, height: 56, borderRadius: 14, backgroundColor: '#F0FDFA',
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-  },
-  logoImg:      { width: 44, height: 44 },
-  title:        { fontSize: 24, fontWeight: '800', color: '#0F172A' },
-  subtitle:     { fontSize: 12.5, color: '#64748B', marginTop: 2 },
-  form:         {},
-  label:        { fontSize: 11, fontWeight: '700', color: '#64748B', letterSpacing: 0.6, marginBottom: 8 },
+  scroll:       { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20 },
+
+  art:          { width: '100%', maxWidth: 360, height: 150, marginBottom: 10, opacity: 0.95 },
+  panel:        { width: '100%', maxWidth: 400 },
+
+  logo:         { width: '100%', height: 54, alignSelf: 'center', marginBottom: 4 },
+  subtitle:     { fontSize: 12.5, color: '#64748B', textAlign: 'center', marginBottom: 22 },
+  welcome:      { fontSize: 24, fontWeight: '800', color: '#0F172A', textAlign: 'center' },
+  welcomeSub:   { fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 20 },
+
+  fieldWrap:    { position: 'relative', marginBottom: 12 },
+  fieldIcon:    { position: 'absolute', left: 14, top: 15, fontSize: 14, color: '#94A3B8', zIndex: 1 },
   input:        {
-    backgroundColor: '#F8FAFC', color: '#0F172A', paddingHorizontal: 16, paddingVertical: 14,
-    borderRadius: 12, fontSize: 15, borderWidth: 1.5, borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC', color: '#0F172A', paddingLeft: 40, paddingRight: 16,
+    paddingVertical: 14, borderRadius: 12, fontSize: 15, borderWidth: 1.5, borderColor: '#E2E8F0',
   },
-  loginBtnWrap: { marginTop: 26, borderRadius: 14, overflow: 'hidden' },
+  eye:          { position: 'absolute', right: 12, top: 12, padding: 4 },
+  eyeText:      { fontSize: 16, color: '#94A3B8' },
+
+  errBox:       {
+    backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 10,
+    paddingVertical: 9, paddingHorizontal: 12, marginBottom: 4,
+  },
+  errText:      { color: '#DC2626', fontSize: 12.5, fontWeight: '600' },
+
+  loginBtnWrap: { marginTop: 18, borderRadius: 14, overflow: 'hidden' },
   loginBtn:     { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  footer:       { textAlign: 'center', color: 'rgba(255,255,255,0.75)', marginTop: 24, fontSize: 12 },
+  footer:       { textAlign: 'center', color: '#94A3B8', marginTop: 22, fontSize: 12 },
 });
