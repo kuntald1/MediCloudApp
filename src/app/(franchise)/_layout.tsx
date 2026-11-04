@@ -10,6 +10,7 @@ const FRANCHISE_MENUS = [
   { name: 'dashboard',      title: 'Dashboard',      icon: '📊' },
   { name: 'patients',       title: 'Patients',       icon: '👥' },
   { name: 'results',        title: 'Results',        icon: '📋' },
+  { name: 'cost-estimate',  title: 'Cost Estimate',  icon: '🧮' },
   { name: 'new-bill',       title: 'New Bill',       icon: '🧾' },
   { name: 'bills',          title: 'Bills',          icon: '💳' },
   { name: 'manage-credit',  title: 'Manage Credit',  icon: '🏦' },

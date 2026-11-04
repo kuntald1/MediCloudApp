@@ -1,4 +1,5 @@
 import { authHeader, API_BASE } from '../../../src/utils/auth';
+import ReferenceRanges from '../../../src/components/ReferenceRanges';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator,
@@ -12,7 +13,7 @@ interface Tube  { id: number; name: string; }
 interface Doctor{ id: number; name: string; }
 interface TestGroup { id: number; name: string; code?: string | null; price: number; tests: { id: number; name: string; price: number }[]; test_ids: number[]; sum_price: number; }
 
-type Tab = 'tests' | 'groups';
+type Tab = 'tests' | 'groups' | 'ranges';
 
 export default function TestsCatalog() {
   const [tab, setTab]           = useState<Tab>('tests');
@@ -256,9 +257,14 @@ export default function TestsCatalog() {
         <TouchableOpacity style={[styles.tab, tab === 'groups' && styles.tabActive]} onPress={() => setTab('groups')}>
           <Text style={[styles.tabText, tab === 'groups' && styles.tabTextActive]}>Test Groups</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={[styles.tab, tab === 'ranges' && styles.tabActive]} onPress={() => setTab('ranges')}>
+          <Text style={[styles.tabText, tab === 'ranges' && styles.tabTextActive]}>Ref. Ranges</Text>
+        </TouchableOpacity>
       </View>
 
-      {tab === 'tests' ? (
+      {tab === 'ranges' ? (
+        <ReferenceRanges tests={tests} />
+      ) : tab === 'tests' ? (
         <>
           <View style={styles.searchWrap}>
             <TextInput style={styles.search} value={search} onChangeText={setSearch} placeholder="🔍  Search tests..." placeholderTextColor="#475569" />
@@ -374,9 +380,9 @@ const styles = StyleSheet.create({
   container:      { flex: 1, backgroundColor: '#F8FAFC' },
   center:         { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
   tabRow:         { flexDirection: 'row', margin: 12, marginBottom: 0, backgroundColor: '#FFFFFF', borderRadius: 10, padding: 4 },
-  tab:            { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  tab:            { flex: 1, paddingVertical: 10, paddingHorizontal: 2, borderRadius: 8, alignItems: 'center' },
   tabActive:      { backgroundColor: '#F97316' },
-  tabText:        { color: '#64748B', fontWeight: '600', fontSize: 13 },
+  tabText:        { color: '#64748B', fontWeight: '600', fontSize: 12.5 },
   tabTextActive:  { color: '#fff' },
   searchWrap:     { padding: 12, paddingBottom: 0 },
   search:         { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },

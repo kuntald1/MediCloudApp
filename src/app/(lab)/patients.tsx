@@ -274,11 +274,11 @@ export default function Patients() {
         referral_doctor_id: form.referral_doctor_id,
         phone: form.phone || null,
         abha_number: form.abha_number || null,
-        note: form.note || null,
+        clinical_history: form.note || null,
         branch_id: isBranchLocked ? lockedBranchId : form.branch_id,
         registered_franchise_id: form.franchise_id,
         organization_id: form.organization_id,
-        checklist: form.checklist,
+        history_checklist: form.checklist,
       };
       if (!isEdit) payload.barcode = form.barcode || undefined;
 

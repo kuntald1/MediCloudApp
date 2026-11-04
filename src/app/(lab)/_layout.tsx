@@ -9,7 +9,7 @@ import { authHeader, API_BASE, getUser } from '../../../src/utils/auth';
 const LAB_MENUS = [
   { name: 'dashboard',         title: 'Dashboard',           icon: '📊' },
   { name: 'patients',          title: 'Patients',            icon: '👥' },
-  { name: 'change-status',     title: 'Change Status',       icon: '🔄' },
+  { name: 'change-status',     title: 'Change Report Status',       icon: '🔄' },
   { name: 'results',           title: 'Results',             icon: '📋' },
   { name: 'tat-report',        title: 'TAT Report',          icon: '⏱️' },
   { name: 'sample-tubes',      title: 'Sample Tubes',        icon: '🧪' },
@@ -21,6 +21,7 @@ const LAB_MENUS = [
   { name: 'departments',       title: 'Departments',         icon: '🏬' },
   { name: 'users-staff',       title: 'Users & Staff',       icon: '👤' },
   { name: 'report-settings',   title: 'Report Settings',     icon: '📝' },
+  { name: 'cost-estimate',     title: 'Cost Estimate',       icon: '🧮' },
   { name: 'new-bill',          title: 'New Bill',            icon: '🧾' },
   { name: 'bills',             title: 'Bills',               icon: '💳' },
   { name: 'doctor-commission', title: 'Doctor Commission',   icon: '💊' },
@@ -37,6 +38,7 @@ const MENU_KEY: Record<string, string> = {
   'org-groups': 'orggroups', organizations: 'organizations', branches: 'branches',
   pricing: 'pricing', 'tests-catalog': 'testscatalog', departments: 'departments',
   'users-staff': 'users', 'report-settings': 'reportsettings', 'new-bill': 'billing',
+  'cost-estimate': 'costestimate',
   bills: 'bills', 'doctor-commission': 'doctors', 'history-needed': 'historyneeded',
   'sample-report': 'samplereport',
 };
