@@ -64,30 +64,26 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={['#eef6f4', '#e4f1fb', '#f3f8fd']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.container}
-    >
+    <View style={styles.container}>
+      {/* The web login's corner waves, baked to an image — the app has no
+          react-native-svg, and this keeps the two screens identical. */}
+      <Image
+        source={require('../../assets/images/login-bg.jpg')}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+      />
+
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.card}>
 
-          <Image
-            source={require('../../assets/images/lab-illustration.png')}
-            style={styles.art}
-            contentFit="contain"
-          />
-
-          <View style={styles.panel}>
             <Image
               source={require('../../assets/images/healthycian-wordmark.png')}
               style={styles.logo}
               contentFit="contain"
             />
-            <Text style={styles.subtitle}>Laboratory Information System</Text>
 
-            <Text style={styles.welcome}>Welcome !</Text>
+            <Text style={styles.welcome}>Welcome Back!</Text>
             <Text style={styles.welcomeSub}>Login to your account to continue</Text>
 
             <View style={styles.fieldWrap}>
@@ -147,52 +143,55 @@ export default function LoginScreen() {
               activeOpacity={0.88}
             >
               <LinearGradient
-                colors={['#f58519', '#f7a325']}
+                colors={['#34b97f', '#17b9a1', '#19a7c4']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.loginBtn}
               >
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>Sign In</Text>}
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.loginBtnText}>Sign In  →</Text>}
               </LinearGradient>
             </TouchableOpacity>
           </View>
-
-          <Text style={styles.footer}>Healthycian © 2026</Text>
         </ScrollView>
       </KeyboardAvoidingView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container:    { flex: 1 },
-  scroll:       { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20 },
+  container:    { flex: 1, backgroundColor: '#f6fbfc' },
+  scroll:       { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 22, paddingVertical: 24 },
 
-  art:          { width: '100%', maxWidth: 360, height: 150, marginBottom: 10, opacity: 0.95 },
-  panel:        { width: '100%', maxWidth: 400 },
+  card:         {
+    width: '100%', maxWidth: 400, backgroundColor: '#ffffff', borderRadius: 20,
+    paddingHorizontal: 24, paddingVertical: 30,
+    borderWidth: 1, borderColor: '#eef3f7',
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.10, shadowRadius: 30, elevation: 8,
+  },
 
-  logo:         { width: '100%', height: 54, alignSelf: 'center', marginBottom: 4 },
-  subtitle:     { fontSize: 12.5, color: '#64748B', textAlign: 'center', marginBottom: 22 },
-  welcome:      { fontSize: 24, fontWeight: '800', color: '#0F172A', textAlign: 'center' },
-  welcomeSub:   { fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 20 },
+  logo:         { width: '100%', height: 52, alignSelf: 'center', marginBottom: 28 },
+  welcome:      { fontSize: 23, fontWeight: '800', color: '#0F2744' },
+  welcomeSub:   { fontSize: 13, color: '#64748B', marginBottom: 20 },
 
   fieldWrap:    { position: 'relative', marginBottom: 12 },
-  fieldIcon:    { position: 'absolute', left: 14, top: 15, fontSize: 14, color: '#94A3B8', zIndex: 1 },
+  fieldIcon:    { position: 'absolute', left: 15, top: 15, fontSize: 14, color: '#94A3B8', zIndex: 1 },
   input:        {
-    backgroundColor: '#F8FAFC', color: '#0F172A', paddingLeft: 40, paddingRight: 16,
-    paddingVertical: 14, borderRadius: 12, fontSize: 15, borderWidth: 1.5, borderColor: '#E2E8F0',
+    backgroundColor: '#F7FAFC', color: '#0F172A', paddingLeft: 42, paddingRight: 16,
+    paddingVertical: 14, borderRadius: 11, fontSize: 15, borderWidth: 1, borderColor: '#E4EBF2',
   },
   eye:          { position: 'absolute', right: 12, top: 12, padding: 4 },
   eyeText:      { fontSize: 16, color: '#94A3B8' },
 
   errBox:       {
-    backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 10,
+    backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 9,
     paddingVertical: 9, paddingHorizontal: 12, marginBottom: 4,
   },
   errText:      { color: '#DC2626', fontSize: 12.5, fontWeight: '600' },
 
-  loginBtnWrap: { marginTop: 18, borderRadius: 14, overflow: 'hidden' },
+  loginBtnWrap: { marginTop: 16, borderRadius: 11, overflow: 'hidden' },
   loginBtn:     { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
   loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  footer:       { textAlign: 'center', color: '#94A3B8', marginTop: 22, fontSize: 12 },
 });
