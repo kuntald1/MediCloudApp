@@ -1,5 +1,6 @@
 import { authHeader, API_BASE } from '../../../src/utils/auth';
 import ReferenceRanges from '../../../src/components/ReferenceRanges';
+import CatalogExcel from '../../../src/components/CatalogExcel';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator,
@@ -266,6 +267,7 @@ export default function TestsCatalog() {
         <ReferenceRanges tests={tests} />
       ) : tab === 'tests' ? (
         <>
+          <CatalogExcel kind="tests" noun="Tests" onDone={fetchAll} />
           <View style={styles.searchWrap}>
             <TextInput style={styles.search} value={search} onChangeText={setSearch} placeholder="🔍  Search tests..." placeholderTextColor="#475569" />
           </View>
@@ -276,6 +278,7 @@ export default function TestsCatalog() {
         </>
       ) : (
         <>
+          <CatalogExcel kind="test-groups" noun="Test Groups" onDone={fetchAll} />
           <TouchableOpacity style={styles.addBtn} onPress={openAddGroup}>
             <Text style={styles.addBtnText}>+ New Test Group</Text>
           </TouchableOpacity>

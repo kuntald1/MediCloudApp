@@ -13,6 +13,7 @@ import {
   TextInput, Alert, Modal, ScrollView,
 } from 'react-native';
 import { authHeader, API_BASE } from '../utils/auth';
+import CatalogExcel from './CatalogExcel';
 
 export interface Range {
   id: number;
@@ -202,6 +203,8 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
 
   return (
     <View style={{ flex: 1 }}>
+      <CatalogExcel kind="reference-ranges" noun="Reference Ranges" onDone={load} />
+
       <TouchableOpacity style={styles.addBtn} onPress={openNew}>
         <Text style={styles.addBtnText}>+ Add Range</Text>
       </TouchableOpacity>
