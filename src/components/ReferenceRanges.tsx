@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator,
-  TextInput, Alert, Modal, ScrollView,
+  TextInput, Alert, Modal, ScrollView, Switch,
 } from 'react-native';
 import { authHeader, API_BASE } from '../utils/auth';
 import CatalogExcel from './CatalogExcel';
@@ -26,6 +26,8 @@ export interface Range {
   critical_low: number | null; critical_high: number | null;
   unit: string | null; text: string | null;
   method: string | null; device_id: number | null;
+  /** Absent on rows from a server that predates the switch — treat as active. */
+  is_active?: boolean;
 }
 /** The catalog rows arrive whole from /catalog/tests, so `parameters` and
  *  `price` are there at runtime even though the parent types them loosely. */
@@ -46,6 +48,7 @@ const BLANK = {
   age_min: '', age_max: '', age_min_months: '', age_max_months: '',
   low: '', high: '', critical_low: '', critical_high: '',
   unit: '', text: '', method: '', device_id: null as number | null,
+  is_active: true,
 };
 
 const num = (v: string) => { const s = (v ?? '').trim(); return s === '' ? null : Number(s); };
@@ -140,6 +143,7 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
     low: r.low?.toString() ?? '', high: r.high?.toString() ?? '',
     critical_low: r.critical_low?.toString() ?? '', critical_high: r.critical_high?.toString() ?? '',
     unit: r.unit || '', text: r.text || '', method: r.method || '', device_id: r.device_id,
+    is_active: r.is_active !== false,
   });
 
   const payloadOf = (f: typeof BLANK) => ({
@@ -150,6 +154,7 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
     critical_low: num(f.critical_low), critical_high: num(f.critical_high),
     unit: f.unit.trim() || null, text: f.text.trim() || null,
     method: f.method.trim() || null, device_id: f.device_id,
+    is_active: f.is_active,
   });
 
   /** id null = create a new row; otherwise update that one. */
@@ -250,10 +255,11 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
               </Text>
             )}
             {g.rows.map(r => (
-              <View key={r.id} style={styles.rangeRow}>
+              <View key={r.id} style={[styles.rangeRow, r.is_active === false && { opacity: 0.5 }]}>
                 <View style={{ flex: 1 }}>
                   <View style={styles.chipRow}>
                     <Text style={styles.chipParam}>{r.param || '—'}</Text>
+                    {r.is_active === false && <Text style={styles.chipInactive}>Inactive</Text>}
                     <Text style={styles.chip}>{GROUP_LABEL[(r.sex || 'A').toUpperCase()] || r.sex}</Text>
                     <Text style={styles.chipMuted}>{ageText(r)}</Text>
                   </View>
@@ -442,6 +448,16 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
                 placeholder='e.g. "Negative"' placeholderTextColor="#94A3B8" />
               <Text style={styles.fieldHint}>For results that aren't a number. Printed instead of low–high when filled.</Text>
 
+              <View style={styles.activeRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fieldLabel, { marginTop: 0 }]}>Active</Text>
+                  <Text style={styles.fieldHint}>Switch off to keep this range but stop using it on reports.</Text>
+                </View>
+                <Switch value={form?.is_active !== false}
+                  onValueChange={v => setForm(f => f && ({ ...f, is_active: v }))}
+                  trackColor={{ true: '#F97316' }} />
+              </View>
+
               <View style={styles.editBtns}>
                 <TouchableOpacity style={styles.cancelBtn} onPress={() => setForm(null)}>
                   <Text style={styles.cancelText}>Cancel</Text>
@@ -602,6 +618,9 @@ const styles = StyleSheet.create({
   overlay:      { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
   formBox:      { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32, maxHeight: '92%' },
   modalTitle:   { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  chipInactive: { fontSize: 10, fontWeight: '700', color: '#92400E', backgroundColor: '#FFFBEB',
+                  borderWidth: 1, borderColor: '#FDE68A', borderRadius: 100, paddingHorizontal: 8, paddingVertical: 2 },
+  activeRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   fieldLabel:   { color: '#94A3B8', fontSize: 11, fontWeight: '600', marginBottom: 6, marginTop: 10 },
   fieldHint:    { color: '#94A3B8', fontSize: 10, marginTop: 4 },
   input:        { backgroundColor: '#F8FAFC', color: '#0F172A', padding: 10, borderRadius: 8, fontSize: 13, borderWidth: 1, borderColor: '#E2E8F0' },
