@@ -9,9 +9,11 @@ import {
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
-interface Test  { id: number; name: string; mrp: number; price: number; normal_value?: string; sample_tube_id?: number | null; assigned_doctor_id?: number | null; sample_type?: string; interpretation?: string | null; disclaimer?: string | null; }
+interface Test  { id: number; name: string; mrp: number; price: number; normal_value?: string; sample_tube_id?: number | null; assigned_doctor_id?: number | null; department_id?: number | null; sample_type?: string; interpretation?: string | null; disclaimer?: string | null; }
 interface Tube  { id: number; name: string; }
 interface Doctor{ id: number; name: string; }
+interface Dept  { id: number; name: string; }
+type Row = { kind: 'head'; key: string; name: string; count: number } | { kind: 'test'; test: Test };
 interface TestGroup { id: number; name: string; code?: string | null; price: number; tests: { id: number; name: string; price: number }[]; test_ids: number[]; sum_price: number; }
 
 type Tab = 'tests' | 'groups' | 'ranges';
@@ -22,12 +24,15 @@ export default function TestsCatalog() {
   const [groups, setGroups]     = useState<TestGroup[]>([]);
   const [tubes, setTubes]       = useState<Tube[]>([]);
   const [doctors, setDoctors]   = useState<Doctor[]>([]);
+  const [departments, setDepartments] = useState<Dept[]>([]);
+  const [openDept, setOpenDept] = useState<Record<string, boolean>>({});
+  const [showDeptPicker, setShowDeptPicker] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
 
   // Inline edit test
   const [editingTestId, setEditingTestId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ mrp: '', price: '', normal_value: '', sample_tube_id: null as number | null, assigned_doctor_id: null as number | null, interpretation: '', disclaimer: '' });
+  const [editForm, setEditForm] = useState({ mrp: '', price: '', normal_value: '', sample_tube_id: null as number | null, assigned_doctor_id: null as number | null, department_id: null as number | null, interpretation: '', disclaimer: '' });
   const [savingTest, setSavingTest] = useState(false);
   const [showTubePicker, setShowTubePicker]     = useState(false);
   const [showDoctorPicker, setShowDoctorPicker] = useState(false);
@@ -44,16 +49,18 @@ export default function TestsCatalog() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [t, g, tb, d] = await Promise.all([
+      const [t, g, tb, d, dp] = await Promise.all([
         fetch(`${API_BASE}/api/b2b/tests`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
         fetch(`${API_BASE}/api/b2b/test-groups`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
         fetch(`${API_BASE}/api/b2b/tubes`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
         fetch(`${API_BASE}/api/b2b/doctors`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
+        fetch(`${API_BASE}/api/catalog/departments`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
       ]);
       setTests(Array.isArray(t) ? t : []);
       setGroups(Array.isArray(g) ? g : []);
       setTubes(Array.isArray(tb) ? tb : []);
       setDoctors(Array.isArray(d) ? d : []);
+      setDepartments(Array.isArray(dp) ? dp : []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -62,6 +69,7 @@ export default function TestsCatalog() {
 
   const tubeName   = (id: number | null | undefined) => tubes.find(t => t.id === id)?.name ?? '—';
   const doctorName = (id: number | null | undefined) => doctors.find(d => d.id === id)?.name ?? '—';
+  const deptName   = (id: number | null | undefined) => departments.find(d => d.id === id)?.name ?? '—';
 
   // ── Inline test edit ──
   const startEditTest = (t: Test) => {
@@ -69,6 +77,7 @@ export default function TestsCatalog() {
     setEditForm({
       mrp: String(t.mrp), price: String(t.price), normal_value: t.normal_value ?? '',
       sample_tube_id: t.sample_tube_id ?? null, assigned_doctor_id: t.assigned_doctor_id ?? null,
+      department_id: t.department_id ?? null,
       interpretation: t.interpretation ?? '', disclaimer: t.disclaimer ?? '',
     });
   };
@@ -83,6 +92,7 @@ export default function TestsCatalog() {
           mrp: Number(editForm.mrp) || 0, price: Number(editForm.price) || 0,
           normal_value: editForm.normal_value || null,
           sample_tube_id: editForm.sample_tube_id, assigned_doctor_id: editForm.assigned_doctor_id,
+          department_id: editForm.department_id,
           interpretation: editForm.interpretation || null, disclaimer: editForm.disclaimer || null,
         }),
       });
@@ -153,6 +163,23 @@ export default function TestsCatalog() {
   ]);
 
   const filteredTests  = tests.filter(t => t.name.toLowerCase().includes(search.toLowerCase()));
+  // Department-wise groups (A-Z, tests with no department last), flattened for the FlatList.
+  // While searching, every group that has a match is shown open.
+  const deptGroups = (() => {
+    const m = new Map<string, { key: string; name: string; rows: Test[] }>();
+    for (const t of filteredTests) {
+      const k = t.department_id ? String(t.department_id) : 'none';
+      if (!m.has(k)) m.set(k, { key: k, name: t.department_id ? (departments.find(d => d.id === t.department_id)?.name ?? `Department #${t.department_id}`) : 'No department', rows: [] });
+      m.get(k)!.rows.push(t);
+    }
+    return [...m.values()].sort((a, b) => a.key === 'none' ? 1 : b.key === 'none' ? -1 : a.name.localeCompare(b.name));
+  })();
+  const isOpen = (k: string) => (search ? true : !!openDept[k]);
+  const setAllDepts = (v: boolean) => setOpenDept(Object.fromEntries(deptGroups.map(g => [g.key, v])));
+  const rows: Row[] = deptGroups.flatMap(g => [
+    { kind: 'head', key: g.key, name: g.name, count: g.rows.length } as Row,
+    ...(isOpen(g.key) ? g.rows.map(t => ({ kind: 'test', test: t } as Row)) : []),
+  ]);
   const filteredGroupTests = tests.filter(t => t.name.toLowerCase().includes(groupTestSearch.toLowerCase()));
 
   const renderTest = ({ item: t }: { item: Test }) => {
@@ -177,6 +204,7 @@ export default function TestsCatalog() {
             </View>
             <View style={styles.metaGrid}>
               {t.normal_value && <Text style={styles.metaLine}>📊 {t.normal_value}</Text>}
+              <Text style={styles.metaLine}>🏥 {deptName(t.department_id)}</Text>
               <Text style={styles.metaLine}>🧪 {tubeName(t.sample_tube_id)}</Text>
               <Text style={styles.metaLine}>👨‍⚕️ {doctorName(t.assigned_doctor_id)}</Text>
             </View>
@@ -195,6 +223,10 @@ export default function TestsCatalog() {
             </View>
             <Text style={styles.fieldLabel}>Normal Value</Text>
             <TextInput style={styles.input} value={editForm.normal_value} onChangeText={v => setEditForm(f => ({ ...f, normal_value: v }))} placeholder="e.g. < 200 mg/dL" placeholderTextColor="#475569" />
+            <Text style={styles.fieldLabel}>Department</Text>
+            <TouchableOpacity style={styles.input} onPress={() => setShowDeptPicker(true)}>
+              <Text style={{ color: '#0F172A' }}>{deptName(editForm.department_id)}</Text>
+            </TouchableOpacity>
             <Text style={styles.fieldLabel}>Sample Tube</Text>
             <TouchableOpacity style={styles.input} onPress={() => setShowTubePicker(true)}>
               <Text style={{ color: '#0F172A' }}>{tubeName(editForm.sample_tube_id)}</Text>
@@ -226,6 +258,12 @@ export default function TestsCatalog() {
       </View>
     );
   };
+
+  const renderRow = ({ item }: { item: Row }) => item.kind === 'head' ? (
+    <TouchableOpacity style={styles.deptHead} onPress={() => setOpenDept(o => ({ ...o, [item.key]: !isOpen(item.key) }))}>
+      <Text style={styles.deptHeadText}>{isOpen(item.key) ? '▾' : '▸'}  {item.name} <Text style={styles.deptCount}>({item.count})</Text></Text>
+    </TouchableOpacity>
+  ) : renderTest({ item: item.test });
 
   const renderGroup = ({ item: g }: { item: TestGroup }) => (
     <View style={styles.card}>
@@ -271,7 +309,11 @@ export default function TestsCatalog() {
           <View style={styles.searchWrap}>
             <TextInput style={styles.search} value={search} onChangeText={setSearch} placeholder="🔍  Search tests..." placeholderTextColor="#475569" />
           </View>
-          <FlatList data={filteredTests} keyExtractor={t => t.id.toString()} renderItem={renderTest}
+          <View style={styles.expandRow}>
+            <TouchableOpacity style={styles.smallBtn} onPress={() => setAllDepts(true)}><Text style={styles.smallBtnText}>Expand all</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.smallBtn} onPress={() => setAllDepts(false)}><Text style={styles.smallBtnText}>Collapse all</Text></TouchableOpacity>
+          </View>
+          <FlatList data={rows} keyExtractor={r => r.kind === 'head' ? 'h' + r.key : 't' + r.test.id} renderItem={renderRow}
             contentContainerStyle={{ padding: 12, paddingBottom: 32 }}
             ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyIcon}>🔬</Text><Text style={styles.emptyText}>No tests found</Text></View>}
           />
@@ -288,6 +330,26 @@ export default function TestsCatalog() {
           />
         </>
       )}
+
+      {/* Department picker */}
+      <Modal visible={showDeptPicker} transparent animationType="slide" onRequestClose={() => setShowDeptPicker(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.pickerBox}>
+            <Text style={styles.modalTitle}>Select Department</Text>
+            <TouchableOpacity style={styles.pickerItem} onPress={() => { setEditForm(f => ({ ...f, department_id: null })); setShowDeptPicker(false); }}>
+              <Text style={styles.pickerText}>—</Text>
+            </TouchableOpacity>
+            <ScrollView style={{ maxHeight: 300 }}>
+              {departments.map(d => (
+                <TouchableOpacity key={d.id} style={styles.pickerItem} onPress={() => { setEditForm(f => ({ ...f, department_id: d.id })); setShowDeptPicker(false); }}>
+                  <Text style={styles.pickerText}>{d.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setShowDeptPicker(false)}><Text style={styles.modalCancelText}>Cancel</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Tube picker */}
       <Modal visible={showTubePicker} transparent animationType="slide" onRequestClose={() => setShowTubePicker(false)}>
@@ -380,6 +442,12 @@ export default function TestsCatalog() {
 }
 
 const styles = StyleSheet.create({
+  deptHead: { backgroundColor: '#EEF1F6', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, marginBottom: 8, marginTop: 4 },
+  deptHeadText: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  deptCount: { color: '#8892A4', fontWeight: '600' },
+  expandRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 4 },
+  smallBtn: { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, paddingVertical: 7, paddingHorizontal: 12 },
+  smallBtnText: { fontSize: 12, fontWeight: '600', color: '#475569' },
   container:      { flex: 1, backgroundColor: '#F8FAFC' },
   center:         { flex: 1, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center' },
   tabRow:         { flexDirection: 'row', margin: 12, marginBottom: 0, backgroundColor: '#FFFFFF', borderRadius: 10, padding: 4 },

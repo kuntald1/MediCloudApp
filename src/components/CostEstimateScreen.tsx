@@ -52,7 +52,7 @@ export default function CostEstimateScreen() {
     Promise.all([
       fetch(`${API_BASE}/api/b2b/organizations`, { headers: authHeader() }).then(r => r.ok ? r.json() : []),
       fetch(`${API_BASE}/api/b2b/tests`,         { headers: authHeader() }).then(r => r.ok ? r.json() : []),
-      fetch(`${API_BASE}/api/b2b/packages`,      { headers: authHeader() }).then(r => r.ok ? r.json() : []),
+      fetch(`${API_BASE}/api/b2b/test-groups`,   { headers: authHeader() }).then(r => r.ok ? r.json() : []),
     ]).then(([o, t, g]) => {
       setOrgs(Array.isArray(o) ? o : []);
       setTests(Array.isArray(t) ? t : []);
