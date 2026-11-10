@@ -105,7 +105,11 @@ export default function Patients() {
 
   // Branch & Franchise
   const [branches, setBranches]     = useState<{id:number;name:string}[]>([]);
-  const [franchises, setFranchises] = useState<{id:number;name:string}[]>([]);
+  const [franchises, setFranchises] = useState<{id:number;name:string;code?:string|null}[]>([]);
+  const [franchiseSearch, setFranchiseSearch] = useState('');
+  // "CODE - NAME" (code left off when the name already starts with it), A-Z, searchable by either.
+  const frLabel = (f: {name:string;code?:string|null}) =>
+    (f.code && !String(f.name || '').toUpperCase().startsWith(String(f.code).trim().toUpperCase())) ? `${f.code} - ${f.name}` : f.name;
   const [showBranchPicker, setShowBranchPicker]       = useState(false);
   const [showFranchisePicker, setShowFranchisePicker] = useState(false);
 
@@ -692,7 +696,7 @@ export default function Patients() {
               disabled={isFranchise || isPhlebotomist}
             >
               <Text style={form.franchise_id ? styles.fieldInputText : { color: '#475569' }}>
-                {franchises.find(f => f.id === form.franchise_id)?.name ?? '-- Direct / Walk-in --'}
+                {(() => { const f = franchises.find(x => x.id === form.franchise_id); return f ? frLabel(f) : '-- Direct / Walk-in --'; })()}
               </Text>
             </TouchableOpacity>
 
@@ -793,18 +797,25 @@ export default function Patients() {
           <View style={styles.overlay}>
             <View style={styles.modalBox}>
               <Text style={styles.modalTitle}>Select Franchise</Text>
-              <ScrollView style={{ maxHeight: 300 }}>
-                <TouchableOpacity style={styles.patItem} onPress={() => { setForm(f => ({ ...f, franchise_id: null, organization_id: null })); setShowFranchisePicker(false); }}>
-                  <Text style={{ color: '#475569' }}>-- Direct / Walk-in --</Text>
-                </TouchableOpacity>
-                {franchises.map(fr => (
+              <TextInput style={styles.modalInput} value={franchiseSearch} onChangeText={setFranchiseSearch}
+                placeholder="Search by name or code..." placeholderTextColor="#475569" autoFocus />
+              <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
+                {!franchiseSearch.trim() && (
+                  <TouchableOpacity style={styles.patItem} onPress={() => { setForm(f => ({ ...f, franchise_id: null, organization_id: null })); setShowFranchisePicker(false); setFranchiseSearch(''); }}>
+                    <Text style={{ color: '#475569' }}>-- Direct / Walk-in --</Text>
+                  </TouchableOpacity>
+                )}
+                {[...franchises]
+                  .filter(fr => frLabel(fr).toLowerCase().includes(franchiseSearch.trim().toLowerCase()))
+                  .sort((a, b) => frLabel(a).localeCompare(frLabel(b)))
+                  .map(fr => (
                   <TouchableOpacity key={fr.id} style={[styles.patItem, form.franchise_id === fr.id && styles.patItemSel]}
-                    onPress={() => { setForm(f => ({ ...f, franchise_id: fr.id, organization_id: fr.id })); setFormError(null); setShowFranchisePicker(false); }}>
-                    <Text style={styles.patName}>{fr.name}</Text>
+                    onPress={() => { setForm(f => ({ ...f, franchise_id: fr.id, organization_id: fr.id })); setFormError(null); setShowFranchisePicker(false); setFranchiseSearch(''); }}>
+                    <Text style={styles.patName}>{frLabel(fr)}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowFranchisePicker(false)}>
+              <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowFranchisePicker(false); setFranchiseSearch(''); }}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
