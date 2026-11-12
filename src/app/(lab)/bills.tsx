@@ -90,6 +90,7 @@ export default function Bills() {
   const [accessionQuery, setAccessionQuery] = useState('');
   const [accessionSearching, setAccessionSearching] = useState(false);
   const [filter, setFilter]     = useState('all');
+  const [stage, setStage]       = useState('');   // test stage — same list as Sample / Test Details
 
   // Detail modal
   const [sel, setSel]           = useState<Bill | null>(null);
@@ -113,13 +114,15 @@ export default function Bills() {
 
   const fetchBills = useCallback(async () => {
     try {
-      const params = filter !== 'all' ? `?status=${filter}` : '';
-      const res  = await fetch(`${API_BASE}/api/billing/bills${params}`, { headers: authHeader() });
+      const qs = new URLSearchParams();
+      if (filter !== 'all') qs.set('status', filter);
+      if (stage) qs.set('stage', stage);
+      const res  = await fetch(`${API_BASE}/api/billing/bills${qs.toString() ? `?${qs.toString()}` : ''}`, { headers: authHeader() });
       const data = await res.json();
       setBills(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filter]);
+  }, [filter, stage]);
 
   useEffect(() => { setLoading(true); fetchBills(); }, [fetchBills]);
   const onRefresh = async () => { setRefreshing(true); await fetchBills(); setRefreshing(false); };
@@ -451,6 +454,14 @@ export default function Bills() {
           </TouchableOpacity>
         ))}
       </View>
+      <View style={[styles.filterRow, { paddingTop: 0 }]}>
+        <Text style={styles.stageLabel}>Status</Text>
+        {['', 'dispatched', 'received', 'tested', 'validated', 'reported'].map(s => (
+          <TouchableOpacity key={s || 'all'} style={[styles.filterBtn, stage === s && styles.stageBtnActive]} onPress={() => setStage(s)}>
+            <Text style={[styles.filterText, stage === s && { color: '#fff' }]}>{s || 'all'}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       <Text style={styles.count}>{filtered.length} bill{filtered.length !== 1 ? 's' : ''}</Text>
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (
         <FlatList data={filtered} keyExtractor={(b, i) => (b.id ?? i).toString()} renderItem={renderItem}
@@ -736,6 +747,8 @@ const styles = StyleSheet.create({
   filterRow:       { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, gap: 6, flexWrap: 'wrap' },
   filterBtn:       { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' },
   filterBtnActive: { backgroundColor: '#17B9A1', borderColor: '#17B9A1' },
+  stageLabel:      { color: '#64748B', fontSize: 11, fontWeight: '700', alignSelf: 'center', marginRight: 2 },
+  stageBtnActive:  { backgroundColor: '#6366F1', borderColor: '#6366F1' },
   filterText:      { color: '#94A3B8', fontSize: 11, fontWeight: '600' },
   count:           { color: '#475569', fontSize: 12, paddingHorizontal: 12, marginBottom: 4 },
   card:            { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },

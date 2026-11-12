@@ -3,11 +3,16 @@ import { uploadPickedFile } from '../../../src/utils/uploadPickedFile';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, Alert, Modal, ScrollView,
+  ActivityIndicator, RefreshControl, Alert, Modal, ScrollView, Platform,
 } from 'react-native';
+
+const STAGES = ['', 'dispatched', 'received', 'tested', 'validated', 'reported'];
+const toYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const orgLabel = (o: any) => (o.code && !String(o.name || '').toUpperCase().startsWith(String(o.code).trim().toUpperCase())) ? `${o.code} - ${o.name}` : o.name;
 
 interface Param  { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; param?: string; calculated?: boolean; flag_manual?: boolean; }
 interface Result {
@@ -64,6 +69,17 @@ export default function Results() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch]         = useState('');
   const [patientName, setPatientName] = useState('');
+  // more filters (same set as the web Results page) + the report ZIP
+  const [showFilters, setShowFilters] = useState(false);
+  const [orgs, setOrgs]             = useState<any[]>([]);
+  const [orgId, setOrgId]           = useState<number | null>(null);
+  const [orgQuery, setOrgQuery]     = useState('');
+  const [patientId, setPatientId]   = useState('');
+  const [fromDate, setFromDate]     = useState('');
+  const [toDate, setToDate]         = useState('');
+  const [stage, setStage]           = useState('');
+  const [picker, setPicker]         = useState<'org' | 'stage' | 'from' | 'to' | null>(null);
+  const [zipBusy, setZipBusy]       = useState(false);
   const [pdfLoading, setPdfLoading] = useState<number | null>(null);
   const [combineLoading, setCombineLoading] = useState(false);
 
@@ -86,18 +102,58 @@ export default function Results() {
   const [editNote, setEditNote]     = useState('');
   const [saving, setSaving]         = useState(false);
 
+  const filterQuery = () => {
+    const qs = new URLSearchParams();
+    if (search.trim())      qs.set('barcode', search.trim());
+    if (patientName.trim()) qs.set('patient_name', patientName.trim());
+    if (orgId)              qs.set('organization_id', String(orgId));
+    if (patientId.trim())   qs.set('patient_id', patientId.trim());
+    if (fromDate)           qs.set('date_from', fromDate);
+    if (toDate)             qs.set('date_to', toDate);
+    if (stage)              qs.set('stage', stage);
+    return qs;
+  };
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/admin/franchises`, { headers: authHeader() })
+      .then(r => r.ok ? r.json() : []).then(d => setOrgs(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+
+  // Every finished report in the date range — one PDF per patient — as a ZIP,
+  // handed to the share sheet (save to Files / Drive / WhatsApp).
+  const downloadZip = async () => {
+    if (!fromDate || !toDate) { Alert.alert('Pick dates', 'Choose a From and a To date first.'); return; }
+    setZipBusy(true);
+    try {
+      const qs = filterQuery();
+      const uri = (FileSystem.cacheDirectory ?? '') + `Reports_${fromDate}_to_${toDate}.zip`;
+      const dl = await FileSystem.downloadAsync(`${API_BASE}/api/results/reports-zip?${qs.toString()}`, uri,
+        { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (dl.status !== 200) {
+        let msg = 'Could not build the ZIP';
+        try { const t = await FileSystem.readAsStringAsync(dl.uri); msg = JSON.parse(t).detail || msg; } catch {}
+        throw new Error(msg);
+      }
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(dl.uri, { mimeType: 'application/zip', dialogTitle: 'Reports ZIP' });
+      } else { Alert.alert('Saved', dl.uri); }
+    } catch (e: any) { Alert.alert('Download Zip', String(e?.message || 'Please try again.')); }
+    setZipBusy(false);
+  };
+
+  const activeFilters = [orgId, patientId.trim(), fromDate, toDate, stage].filter(Boolean).length;
+  const clearFilters = () => { setOrgId(null); setPatientId(''); setFromDate(''); setToDate(''); setStage(''); };
+
   const fetchResults = useCallback(async () => {
     try {
-      const qs = new URLSearchParams();
-      if (search.trim())      qs.set('barcode', search.trim());
-      if (patientName.trim()) qs.set('patient_name', patientName.trim());
+      const qs = filterQuery();
       const url = qs.toString() ? `${API_BASE}/api/results/?${qs.toString()}` : `${API_BASE}/api/results/`;
       const res  = await fetch(url, { headers: authHeader() });
       const data = await res.json();
       setResults(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [search, patientName]);
+  }, [search, patientName, orgId, patientId, fromDate, toDate, stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setLoading(true); fetchResults(); }, [fetchResults]);
   const onRefresh = () => { setRefreshing(true); fetchResults(); };
@@ -370,7 +426,93 @@ export default function Results() {
         <TextInput style={[styles.search, { marginTop: 8 }]} value={patientName} onChangeText={setPatientName}
           placeholder="🔍  Search by patient name..." placeholderTextColor="#475569"
           onSubmitEditing={fetchResults} returnKeyType="search" />
+
+        <TouchableOpacity style={styles.moreBtn} onPress={() => setShowFilters(v => !v)}>
+          <Text style={styles.moreText}>{showFilters ? '▾' : '▸'}  More filters & Download Zip{activeFilters ? `  ·  ${activeFilters} on` : ''}</Text>
+        </TouchableOpacity>
+        {showFilters && (
+          <View style={styles.filterBox}>
+            <View style={styles.fRow}>
+              <TouchableOpacity style={[styles.fInput, { flex: 1 }]} onPress={() => setPicker('org')}>
+                <Text style={{ color: orgId ? '#0F172A' : '#64748B', fontSize: 13 }} numberOfLines={1}>
+                  {orgId ? orgLabel(orgs.find(o => o.id === orgId) || {}) : 'All organizations'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.fRow}>
+              <TouchableOpacity style={[styles.fInput, { flex: 1 }]} onPress={() => setPicker('from')}>
+                <Text style={{ color: fromDate ? '#0F172A' : '#64748B', fontSize: 13 }}>{fromDate || 'From date'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.fInput, { flex: 1 }]} onPress={() => setPicker('to')}>
+                <Text style={{ color: toDate ? '#0F172A' : '#64748B', fontSize: 13 }}>{toDate || 'To date'}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.fRow}>
+              <TextInput style={[styles.fInput, { flex: 1 }]} value={patientId} onChangeText={setPatientId}
+                placeholder="Patient ID" placeholderTextColor="#64748B" keyboardType="number-pad" />
+              <TouchableOpacity style={[styles.fInput, { flex: 1 }]} onPress={() => setPicker('stage')}>
+                <Text style={{ color: stage ? '#0F172A' : '#64748B', fontSize: 13, textTransform: 'capitalize' }}>{stage || 'Status: all'}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.fRow}>
+              {activeFilters > 0 && (
+                <TouchableOpacity style={styles.clearBtn} onPress={clearFilters}>
+                  <Text style={styles.clearText}>Clear</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={[styles.zipBtn, (!fromDate || !toDate) && { opacity: 0.55 }]} onPress={downloadZip} disabled={zipBusy}>
+                {zipBusy ? <ActivityIndicator color="#0E7D6B" /> : <Text style={styles.zipText}>🗜️  Download Zip</Text>}
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.fHint}>Download Zip: every finished report between the dates, one PDF per patient.</Text>
+          </View>
+        )}
       </View>
+
+      {(picker === 'from' || picker === 'to') && (
+        <DateTimePicker
+          value={(picker === 'from' ? fromDate : toDate) ? new Date(picker === 'from' ? fromDate : toDate) : new Date()}
+          mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(_e, d) => { const w = picker; setPicker(null); if (d) (w === 'from' ? setFromDate : setToDate)(toYMD(d)); }}
+        />
+      )}
+      <Modal visible={picker === 'org' || picker === 'stage'} transparent animationType="slide" onRequestClose={() => setPicker(null)}>
+        <View style={styles.pOverlay}>
+          <View style={styles.pBox}>
+            <Text style={styles.pTitle}>{picker === 'org' ? 'Organization' : 'Status'}</Text>
+            {picker === 'org' && (
+              <TextInput style={[styles.fInput, { marginBottom: 8 }]} value={orgQuery} onChangeText={setOrgQuery}
+                placeholder="Type code or name…" placeholderTextColor="#64748B" />
+            )}
+            <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
+              {picker === 'org' && (
+                <>
+                  <TouchableOpacity style={styles.pItem} onPress={() => { setOrgId(null); setPicker(null); setOrgQuery(''); }}>
+                    <Text style={styles.pText}>All organizations</Text>
+                  </TouchableOpacity>
+                  {orgs.map(o => ({ o, l: orgLabel(o) }))
+                    .filter(x => !orgQuery.trim() || x.l.toLowerCase().includes(orgQuery.trim().toLowerCase()))
+                    .sort((a, b) => a.l.localeCompare(b.l))
+                    .map(({ o, l }) => (
+                      <TouchableOpacity key={o.id} style={[styles.pItem, orgId === o.id && styles.pItemOn]}
+                        onPress={() => { setOrgId(o.id); setPicker(null); setOrgQuery(''); }}>
+                        <Text style={styles.pText}>{l}</Text>
+                      </TouchableOpacity>
+                    ))}
+                </>
+              )}
+              {picker === 'stage' && STAGES.map(s => (
+                <TouchableOpacity key={s || 'all'} style={[styles.pItem, stage === s && styles.pItemOn]} onPress={() => { setStage(s); setPicker(null); }}>
+                  <Text style={[styles.pText, { textTransform: 'capitalize' }]}>{s || 'All'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.pCancel} onPress={() => setPicker(null)}>
+              <Text style={styles.pCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (
         <FlatList data={results} keyExtractor={(r, i) => (r.id ?? i).toString()} renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: 32 }}
@@ -554,6 +696,24 @@ export default function Results() {
 const styles = StyleSheet.create({
   container:      { flex: 1, backgroundColor: '#F8FAFC' },
   searchWrap:     { padding: 12 },
+  moreBtn:        { marginTop: 8, paddingVertical: 6 },
+  moreText:       { color: '#0E7D6B', fontSize: 12.5, fontWeight: '700' },
+  filterBox:      { backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 10, gap: 8 },
+  fRow:           { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  fInput:         { backgroundColor: '#F8FAFC', color: '#0F172A', paddingHorizontal: 10, paddingVertical: 10, borderRadius: 9, fontSize: 13, borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center' },
+  clearBtn:       { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 9, borderWidth: 1, borderColor: '#E2E8F0' },
+  clearText:      { color: '#EF4444', fontWeight: '700', fontSize: 12.5 },
+  zipBtn:         { flex: 1, paddingVertical: 10, borderRadius: 9, borderWidth: 1.5, borderColor: '#0E7D6B', alignItems: 'center' },
+  zipText:        { color: '#0E7D6B', fontWeight: '700', fontSize: 13 },
+  fHint:          { color: '#94A3B8', fontSize: 10.5 },
+  pOverlay:       { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
+  pBox:           { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  pTitle:         { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  pItem:          { padding: 13, borderRadius: 10, marginBottom: 6, borderWidth: 1, borderColor: '#E2E8F0' },
+  pItemOn:        { borderColor: '#17B9A1', backgroundColor: '#17B9A115' },
+  pText:          { color: '#0F172A', fontSize: 14 },
+  pCancel:        { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
+  pCancelText:    { color: '#EF4444', fontWeight: '700' },
   search:         { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   card:           { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   cardRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
