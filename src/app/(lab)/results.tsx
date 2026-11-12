@@ -21,6 +21,7 @@ interface Result {
   created_at: string; device_name?: string; accession_number?: string;
   parsed_data?: { parameters?: Param[]; protocol?: string } | null;
   note?: string | null;
+  edited?: { at?: string; by?: string; count?: number } | null;   // someone changed it after the analyser
   // Outsourced-origin marker — field name not fully confirmed against the live
   // API response yet, so isOutsourced() below checks several plausible names.
   is_outsourced?: boolean;
@@ -288,6 +289,7 @@ export default function Results() {
         ...sel,
         parsed_data: data.parsed_data ?? sel.parsed_data,
         note: data.note ?? editNote,
+        edited: data.parsed_data?.edited ?? sel.edited,
       };
       setSel(merged);
       setResults(prev => prev.map(r => r.id === merged.id ? merged : r));
@@ -404,6 +406,11 @@ export default function Results() {
                 <Text style={[styles.badgeText, { color: '#8B5CF6' }]}>📤 OUTSOURCED</Text>
               </View>
             )}
+            {r.edited ? (
+              <View style={[styles.badge, { borderColor: '#7C3AED', backgroundColor: '#7C3AED14' }]}>
+                <Text style={[styles.badgeText, { color: '#7C3AED' }]}>✎ EDITED{(r.edited.count ?? 1) > 1 ? ` ×${r.edited.count}` : ''}</Text>
+              </View>
+            ) : null}
             <View style={[styles.badge, { borderColor: color }]}>
               <Text style={[styles.badgeText, { color }]}>● {life}</Text>
             </View>
@@ -412,6 +419,7 @@ export default function Results() {
         <Text style={styles.name}>{r.patient_name}</Text>
         {r.test_name && <Text style={styles.testName}>🧪 {r.test_name}</Text>}
         <Text style={styles.date}>🕐 {fmtDateTime(r.created_at)}{r.device_name ? ` · ${r.device_name}` : ''}</Text>
+        {r.edited ? <Text style={styles.editedLine}>✎ Edited{r.edited.by ? ` by ${r.edited.by}` : ''}{r.edited.at ? ` · ${fmtDateTime(r.edited.at)}` : ''}</Text> : null}
         <Text style={styles.tapHint}>Tap for details ›</Text>
       </TouchableOpacity>
     );
@@ -724,6 +732,7 @@ const styles = StyleSheet.create({
   name:           { color: '#0F172A', fontSize: 16, fontWeight: 'bold', marginBottom: 2 },
   testName:       { color: '#60A5FA', fontSize: 13, marginBottom: 4 },
   date:           { color: '#475569', fontSize: 11 },
+  editedLine:     { color: '#7C3AED', fontSize: 11, fontWeight: '600', marginTop: 2 },
   tapHint:        { color: '#475569', fontSize: 11, marginTop: 8 },
   empty:          { alignItems: 'center', marginTop: 60 },
   emptyIcon:      { fontSize: 48 },
