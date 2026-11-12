@@ -16,6 +16,8 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput,
   ActivityIndicator, Alert, Modal, ScrollView,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { authHeader, API_BASE, getUser } from '../utils/auth';
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
@@ -44,6 +46,9 @@ export default function CostEstimateScreen() {
 
   const [search, setSearch]     = useState('');
   const [discount, setDiscount] = useState('');
+  const [discType, setDiscType] = useState<'flat' | 'percent'>('flat');
+  const [qty, setQty]           = useState<Record<string, number>>({});   // 'group:5' -> 2; missing = 1
+  const [pdfBusy, setPdfBusy]   = useState(false);
   const [patientName, setPatientName] = useState('');
   const [toNumber, setToNumber] = useState('');
   const [sending, setSending]   = useState(false);
@@ -94,27 +99,73 @@ export default function CostEstimateScreen() {
     return r ? r.mrp : (it.mrp ?? 0);
   };
 
+  const qtyOf = (kind: 'test' | 'group', id: number) => qty[`${kind}:${id}`] || 1;
+  const setQ  = (kind: 'test' | 'group', id: number, n: number) =>
+    setQty(q => ({ ...q, [`${kind}:${id}`]: Math.max(1, Math.min(99, n)) }));
+
   const toggle = (kind: 'test' | 'group', id: number) => {
     const [list, set] = kind === 'test' ? [pickedTests, setPickedTests] : [pickedGroups, setPickedGroups] as const;
+    if (list.includes(id)) setQty(q => { const n = { ...q }; delete n[`${kind}:${id}`]; return n; });  // re-ticking starts at 1
     (set as any)(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
   };
 
   const rows = useMemo(() => [
     ...pickedGroups.map(id => {
       const it = groups.find(g => g.id === id) || { id, name: `#${id}`, price: 0 };
-      return { kind: 'group' as const, id, name: it.name, price: rateOf('group', it), mrp: mrpOf('group', it) };
+      return { kind: 'group' as const, id, name: it.name, price: rateOf('group', it), mrp: mrpOf('group', it), qty: qtyOf('group', id) };
     }),
     ...pickedTests.map(id => {
       const it = tests.find(t => t.id === id) || { id, name: `#${id}`, price: 0 };
-      return { kind: 'test' as const, id, name: it.name, price: rateOf('test', it), mrp: mrpOf('test', it) };
+      return { kind: 'test' as const, id, name: it.name, price: rateOf('test', it), mrp: mrpOf('test', it), qty: qtyOf('test', id) };
     }),
-  ], [pickedTests, pickedGroups, tests, groups, testRates, groupRates]);
+  ], [pickedTests, pickedGroups, tests, groups, testRates, groupRates, qty]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const priceTotal = rows.reduce((s, r) => s + (Number(r.price) || 0), 0);
-  const mrpTotal   = rows.reduce((s, r) => s + (Number(r.mrp)   || 0), 0);
-  // Mirrors the server: never negative, never more than the total.
-  const disc    = Math.max(0, Math.min(Number(discount) || 0, priceTotal));
+  const priceTotal = rows.reduce((s, r) => s + (Number(r.price) || 0) * r.qty, 0);
+  const mrpTotal   = rows.reduce((s, r) => s + (Number(r.mrp)   || 0) * r.qty, 0);
+  // Mirrors the server: never negative, never more than the total; % held to 0–100.
+  const discRaw = Number(discount) || 0;
+  const disc    = discType === 'percent'
+    ? Math.min(priceTotal, Math.round(priceTotal * Math.max(0, Math.min(discRaw, 100))) / 100)
+    : Math.max(0, Math.min(discRaw, priceTotal));
   const payable = priceTotal - disc;
+
+  // exactly what is on screen, for the server to price
+  const payload = () => ({
+    organization_id: orgId,
+    test_ids: pickedTests, group_ids: pickedGroups,
+    test_qty:  Object.fromEntries(pickedTests.map(id => [String(id), qtyOf('test', id)])),
+    group_qty: Object.fromEntries(pickedGroups.map(id => [String(id), qtyOf('group', id)])),
+    discount_type: discType, discount_value: discRaw,
+    patient_name: patientName.trim() || null,
+  });
+
+  // The PDF comes from a POST, so it is read as base64, written to the cache
+  // and handed to the share sheet (save / WhatsApp / print from there).
+  const downloadPdf = async () => {
+    if (!rows.length) { Alert.alert('Nothing to quote', 'Pick at least one test or group.'); return; }
+    setPdfBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/estimates/pdf`, {
+        method: 'POST', headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload()),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({} as any)); throw new Error(e.detail || 'PDF failed'); }
+      const blob = await res.blob();
+      const b64: string = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result).split(',')[1] || '');
+        fr.onerror = () => reject(new Error('Could not read the PDF'));
+        fr.readAsDataURL(blob);
+      });
+      const name = `Estimate_${(patientName.trim() || 'quote').replace(/[^A-Za-z0-9_-]/g, '')}.pdf`;
+      const uri = (FileSystem.cacheDirectory ?? '') + name;
+      await FileSystem.writeAsStringAsync(uri, b64, { encoding: 'base64' as any });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Cost Estimate' });
+      } else { Alert.alert('Saved', uri); }
+    } catch (e: any) { Alert.alert('Could not make the PDF', String(e?.message || 'Please try again.')); }
+    setPdfBusy(false);
+  };
 
   const org      = orgs.find(o => o.id === orgId) || null;
   const orgPhone = org?.phone || '';
@@ -133,12 +184,7 @@ export default function CostEstimateScreen() {
       const res = await fetch(`${API_BASE}/api/estimates/send`, {
         method: 'POST',
         headers: { ...authHeader(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          organization_id: orgId,
-          test_ids: pickedTests, group_ids: pickedGroups,
-          discount: disc, patient_name: patientName.trim() || null,
-          to_number: toNumber.trim() || null,
-        }),
+        body: JSON.stringify({ ...payload(), to_number: toNumber.trim() || null }),
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({} as any));
@@ -231,11 +277,23 @@ export default function CostEstimateScreen() {
           ) : (
             <>
               {rows.map(r => (
-                <View key={r.kind + r.id} style={styles.quoteRow}>
-                  <Text style={styles.quoteName} numberOfLines={1}>
-                    {r.name}{r.kind === 'group' ? '  (group)' : ''}
-                  </Text>
-                  <Text style={styles.quotePrice}>{inr(r.price)}</Text>
+                <View key={r.kind + r.id} style={[styles.quoteRow, { alignItems: 'center' }]}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.quoteName} numberOfLines={1}>
+                      {r.name}{r.kind === 'group' ? '  (group)' : ''}
+                    </Text>
+                    {r.qty > 1 && <Text style={styles.quoteMuted}>{inr(r.price)} × {r.qty}</Text>}
+                  </View>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepBtn} onPress={() => setQ(r.kind, r.id, r.qty - 1)} disabled={r.qty <= 1}>
+                      <Text style={[styles.stepText, r.qty <= 1 && { color: '#CBD5E1' }]}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.stepVal}>{r.qty}</Text>
+                    <TouchableOpacity style={styles.stepBtn} onPress={() => setQ(r.kind, r.id, r.qty + 1)}>
+                      <Text style={styles.stepText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.quotePrice, { minWidth: 70, textAlign: 'right' }]}>{inr((Number(r.price) || 0) * r.qty)}</Text>
                 </View>
               ))}
               {mrpTotal > priceTotal && (
@@ -251,10 +309,22 @@ export default function CostEstimateScreen() {
             </>
           )}
 
-          <Text style={styles.fieldLabel}>Discount (₹ off the total)</Text>
-          <TextInput style={styles.input} keyboardType="numeric" value={discount}
-            onChangeText={setDiscount} placeholder="0" placeholderTextColor="#94A3B8" />
-          {Number(discount) > priceTotal && priceTotal > 0 && (
+          <Text style={styles.fieldLabel}>Discount</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={styles.discToggle}>
+              {([['flat', '₹'], ['percent', '%']] as const).map(([k, l]) => (
+                <TouchableOpacity key={k} onPress={() => setDiscType(k)} style={[styles.discOpt, discType === k && styles.discOptOn]}>
+                  <Text style={[styles.discOptText, discType === k && { color: '#fff' }]}>{l}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput style={[styles.input, { flex: 1 }]} keyboardType="numeric" value={discount}
+              onChangeText={setDiscount} placeholder="0" placeholderTextColor="#94A3B8" />
+          </View>
+          {discType === 'percent' && disc > 0 && (
+            <Text style={styles.hint}>{Math.min(discRaw, 100)}% of {inr(priceTotal)} = {inr(disc)} off</Text>
+          )}
+          {((discType === 'flat' && discRaw > priceTotal) || (discType === 'percent' && discRaw > 100)) && priceTotal > 0 && (
             <Text style={styles.warn}>Capped at the total — payable cannot go below zero.</Text>
           )}
 
@@ -273,10 +343,16 @@ export default function CostEstimateScreen() {
           <Text style={styles.payLabel}>Payable</Text>
           <Text style={styles.payValue}>{inr(payable)}</Text>
         </View>
-        <TouchableOpacity style={[styles.sendBtn, !rows.length && styles.sendBtnOff]}
-          onPress={send} disabled={sending || !rows.length}>
-          <Text style={styles.sendText}>{sending ? 'Sending…' : '💬  Send Estimate'}</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity style={[styles.pdfBtn, !rows.length && styles.pdfBtnOff]}
+            onPress={downloadPdf} disabled={pdfBusy || !rows.length}>
+            {pdfBusy ? <ActivityIndicator color="#0E7D6B" /> : <Text style={[styles.pdfText, !rows.length && { color: '#CBD5E1' }]}>⬇  PDF</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.sendBtn, { flex: 1 }, !rows.length && styles.sendBtnOff]}
+            onPress={send} disabled={sending || !rows.length}>
+            <Text style={styles.sendText}>{sending ? 'Sending…' : '💬  Send Estimate'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Modal visible={showOrgPicker} transparent animationType="slide" onRequestClose={() => setShowOrgPicker(false)}>
@@ -344,6 +420,17 @@ const styles = StyleSheet.create({
   sendBtn:     { marginTop: 10, backgroundColor: '#16A34A', borderRadius: 10, padding: 14, alignItems: 'center' },
   sendBtnOff:  { backgroundColor: '#CBD5E1' },
   sendText:    { color: '#fff', fontWeight: '700', fontSize: 15 },
+  stepper:     { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'hidden', marginRight: 8 },
+  stepBtn:     { width: 30, height: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F1F5F9' },
+  stepText:    { color: '#0F172A', fontSize: 16, fontWeight: '800' },
+  stepVal:     { minWidth: 26, textAlign: 'center', color: '#0F172A', fontSize: 13, fontWeight: '700' },
+  discToggle:  { flexDirection: 'row', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, overflow: 'hidden' },
+  discOpt:     { paddingHorizontal: 16, justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  discOptOn:   { backgroundColor: '#F97316' },
+  discOptText: { color: '#64748B', fontSize: 15, fontWeight: '800' },
+  pdfBtn:      { marginTop: 10, borderWidth: 1.5, borderColor: '#0E7D6B', borderRadius: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  pdfBtnOff:   { borderColor: '#E2E8F0' },
+  pdfText:     { color: '#0E7D6B', fontWeight: '700', fontSize: 14 },
   overlay:     { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
   pickerBox:   { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
   modalTitle:  { color: '#0F172A', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },

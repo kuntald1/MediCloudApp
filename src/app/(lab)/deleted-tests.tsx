@@ -21,7 +21,7 @@ const toYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSta
 
 export default function DeletedTests() {
   const [rows, setRows]       = useState<any[]>([]);
-  const [totals, setTotals]   = useState<{ deletions: number; bills: number; amount: number } | null>(null);
+  const [totals, setTotals]   = useState<{ deletions: number; cancelled_bills?: number; bills: number; amount: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -76,9 +76,10 @@ export default function DeletedTests() {
         <View style={styles.nameRow}>
           <Text style={styles.testName}>{r.name}</Text>
           {r.is_group ? <Text style={styles.grpPill}>GROUP</Text> : null}
+          {r.kind === 'bill_cancelled' ? <Text style={styles.cancelPill}>BILL CANCELLED</Text> : null}
           {r.status ? <Text style={[styles.stagePill, { color: c, backgroundColor: c + '1A' }]}>{String(r.status).replace('_', ' ')}</Text> : null}
         </View>
-        {r.is_group ? <Text style={styles.members}>{(r.members ?? []).join(', ')}</Text> : null}
+        {(r.is_group || r.kind === 'bill_cancelled') ? <Text style={styles.members}>{(r.members ?? []).join(', ')}</Text> : null}
         <Text style={styles.meta}>👤 {r.patient_name ?? '—'}  ·  <Text style={styles.code}>{r.barcode ?? '—'}</Text>{r.accession_number ? <Text style={styles.code}>  ·  {r.accession_number}</Text> : null}</Text>
         <Text style={styles.meta}>🏢 {r.franchise} · {r.branch}</Text>
         <View style={styles.byBox}>
@@ -136,7 +137,8 @@ export default function DeletedTests() {
 
       {totals && (
         <View style={styles.kpiRow}>
-          <View style={styles.kpiBox}><Text style={[styles.kpiVal, { color: '#EF4444' }]}>{totals.deletions}</Text><Text style={styles.kpiLabel}>Deletions</Text></View>
+          <View style={styles.kpiBox}><Text style={[styles.kpiVal, { color: '#EF4444' }]}>{totals.deletions}</Text><Text style={styles.kpiLabel}>Tests deleted</Text></View>
+          <View style={styles.kpiBox}><Text style={[styles.kpiVal, { color: '#64748B' }]}>{totals.cancelled_bills ?? 0}</Text><Text style={styles.kpiLabel}>Bills cancelled</Text></View>
           <View style={styles.kpiBox}><Text style={[styles.kpiVal, { color: '#6366F1' }]}>{totals.bills}</Text><Text style={styles.kpiLabel}>Bills</Text></View>
           <View style={styles.kpiBox}><Text style={[styles.kpiVal, { color: '#0F172A' }]}>{inr(totals.amount)}</Text><Text style={styles.kpiLabel}>Amount removed</Text></View>
         </View>
@@ -207,6 +209,7 @@ const styles = StyleSheet.create({
   testName:      { color: '#475569', fontSize: 15, fontWeight: '700', textDecorationLine: 'line-through' },
   grpPill:       { color: '#C2410C', backgroundColor: '#F973161F', fontSize: 9.5, fontWeight: '800', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10, overflow: 'hidden' },
   stagePill:     { fontSize: 10, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, overflow: 'hidden', textTransform: 'capitalize' },
+  cancelPill:    { color: '#475569', backgroundColor: '#64748B24', fontSize: 9.5, fontWeight: '800', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10, overflow: 'hidden' },
   members:       { color: '#94A3B8', fontSize: 11.5, marginBottom: 4 },
   meta:          { color: '#64748B', fontSize: 12, marginTop: 3 },
   code:          { color: '#6366F1', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 11.5 },
