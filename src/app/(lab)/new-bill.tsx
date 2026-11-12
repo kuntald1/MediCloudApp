@@ -140,6 +140,7 @@ export default function NewBill() {
   const [showDiscPicker, setShowDiscPicker]     = useState(false);
   const [patientSearch, setPatientSearch]       = useState('');
   const [testSearch, setTestSearch]             = useState('');
+  const [pickTab, setPickTab]                   = useState<'tests' | 'groups'>('tests');  // which list the search box filters
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -660,12 +661,20 @@ export default function NewBill() {
               <Text style={styles.sectionHeaderIcon}>🧪</Text>
               <Text style={styles.sLabel}>ADD TESTS</Text>
             </View>
+            <View style={styles.pickTabs}>
+              {([['tests', 'Individual Tests'], ['groups', 'Test Groups']] as const).map(([k, l]) => (
+                <TouchableOpacity key={k} onPress={() => setPickTab(k)}
+                  style={[styles.pickTab, pickTab === k && styles.pickTabOn]}>
+                  <Text style={[styles.pickTabText, pickTab === k && styles.pickTabTextOn]}>{l}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <TextInput style={styles.searchInput} value={testSearch} onChangeText={setTestSearch}
-              placeholder="🔍  Search tests or groups..." placeholderTextColor="#475569" />
-            {filteredGroups.length > 0 && <>
-              <View style={styles.subSectionHeader}>
-                <Text style={styles.subLabel}>TEST GROUPS</Text>
-              </View>
+              placeholder={pickTab === 'groups' ? '🔍  Search test groups...' : '🔍  Search individual tests...'} placeholderTextColor="#475569" />
+            {pickTab === 'groups' && filteredGroups.length === 0 && (
+              <Text style={styles.pickEmpty}>No test groups found.</Text>
+            )}
+            {pickTab === 'groups' && filteredGroups.length > 0 && <>
               {filteredGroups.map(g => {
                 const sel = !!pickedGroups[g.id];
                 const groupListPrice = effectiveGroupPrices[g.id]?.price ?? g.price;
@@ -685,10 +694,10 @@ export default function NewBill() {
                 );
               })}
             </>}
-            {filteredTests.length > 0 && <>
-              <View style={[styles.subSectionHeader, { marginTop: 14 }]}>
-                <Text style={styles.subLabel}>INDIVIDUAL TESTS</Text>
-              </View>
+            {pickTab === 'tests' && filteredTests.length === 0 && (
+              <Text style={styles.pickEmpty}>No tests found.</Text>
+            )}
+            {pickTab === 'tests' && filteredTests.length > 0 && <>
               {filteredTests.map(t => {
                 const sel = !!pickedTests[t.id]; const inGrp = groupMemberIds.has(t.id);
                 const memberOfGroups = groups.filter(g => (g.test_ids ?? g.tests.map(mt => mt.id)).includes(t.id)).map(g => g.name);
@@ -1070,6 +1079,12 @@ const styles = StyleSheet.create({
   selPh:          { flex: 1, color: '#475569', fontSize: 14 },
   arrow:          { color: '#475569' },
   billingTo:      { fontSize: 13, fontWeight: '600', marginTop: 6 },
+  pickTabs:       { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  pickTab:        { flex: 1, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderColor: '#E5E8EF', backgroundColor: '#FFFFFF', alignItems: 'center' },
+  pickTabOn:      { borderColor: '#F97316', backgroundColor: '#F973161A' },
+  pickTabText:    { color: '#8892A4', fontWeight: '700', fontSize: 12.5 },
+  pickTabTextOn:  { color: '#C2410C' },
+  pickEmpty:      { color: '#8892A4', fontSize: 13, paddingVertical: 14, textAlign: 'center' },
   searchInput:    { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },
   testItem:       { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 6, backgroundColor: '#FFFFFF' },
   testItemSel:    { borderColor: '#17B9A1', backgroundColor: '#17B9A115' },

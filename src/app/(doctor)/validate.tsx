@@ -12,7 +12,7 @@ interface PendingReport {
   status: string; needs_history: boolean; assigned_doctor_id?: number | null;
   organization_id?: number | null; created_at: string; accession_numbers?: string[];
 }
-interface Param { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; }
+interface Param { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; param?: string; calculated?: boolean; flag_manual?: boolean; }
 interface ResultItem { id: number; test_name: string; status: string; created_at: string; accession_number?: string; note?: string | null; parsed_data?: { protocol?: string; parameters?: Param[] }; }
 interface HistoryTrail { id: number; asked_for: string[]; note?: string | null; status: string; answer?: string | null; answer_checklist?: string[]; created_at: string; answered_at?: string | null; }
 interface ReportDetail extends PendingReport {
@@ -38,6 +38,16 @@ const POLL_MS = 8000;
 const fmtDate = (iso?: string | null) => iso ? new Date(iso).toLocaleString('en-IN', {
   day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
 }) : '—';
+
+// What the server needs for one edited row. `param` (the analyser code) and
+// `calculated` (VLDL / lipid ratios) must travel too, or a saved calculated row
+// can't be refreshed by Calculate later.
+const toPayload = (p: any) => ({
+  param: p.param, name: p.name,
+  value: isNaN(Number(p.value)) || String(p.value).trim() === '' ? p.value : Number(p.value),
+  unit: p.unit, ref_min: p.ref_min, ref_max: p.ref_max, flag: p.flag || undefined,
+  flag_manual: p.flag_manual || undefined, calculated: p.calculated || undefined,
+});
 
 export default function ReportValidate() {
   const [items, setItems]           = useState<PendingReport[]>([]);
@@ -111,27 +121,45 @@ export default function ReportValidate() {
     finally { setPdfLoading(null); }
   };
 
+  const [calcBusy, setCalcBusy]   = useState(false);
+  const [calcDirty, setCalcDirty] = useState(false);   // a value was edited since the last Calculate
+
   const startEditResult = (r: ResultItem) => {
     setEditingResultId(r.id);
     setEditParams((r.parsed_data?.parameters ?? []).map(p => ({ ...p })));
     setEditNote(r.note ?? '');
+    setCalcDirty(false);
   };
   const cancelEditResult = () => setEditingResultId(null);
 
-  const setEditParamValue = (i: number, v: string) =>
+  const setEditParamValue = (i: number, v: string) => {
+    setCalcDirty(true);
     setEditParams(prev => prev.map((p, idx) => idx === i ? { ...p, value: v } : p));
-  const setEditParamFlag = (i: number, flag: string) =>
-    setEditParams(prev => prev.map((p, idx) => idx === i ? { ...p, flag } : p));
+  };
+  const setEditParamFlag = (i: number, flag: string) =>   // a hand-picked flag survives Calculate
+    setEditParams(prev => prev.map((p, idx) => idx === i ? { ...p, flag, flag_manual: true } : p));
+
+  // Recompute VLDL / lipid ratios from the values as typed (nothing is saved until Save).
+  const calculate = async (resultId: number) => {
+    setCalcBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/results/${resultId}/calculate`, {
+        method: 'POST', headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parameters: editParams.map(toPayload) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail ?? 'Calculate failed');
+      setEditParams(data.parameters);
+      setCalcDirty(false);
+    } catch (e: any) { Alert.alert('Calculate', e.message); }
+    finally { setCalcBusy(false); }
+  };
 
   const saveEditResult = async (resultId: number) => {
     setSavingEdit(true);
     try {
       const payload = {
-        parameters: editParams.map(p => ({
-          name: p.name,
-          value: isNaN(Number(p.value)) ? p.value : Number(p.value),
-          unit: p.unit, ref_min: p.ref_min, ref_max: p.ref_max, flag: p.flag || undefined,
-        })),
+        parameters: editParams.map(toPayload),
         note: editNote,
       };
       const res  = await fetch(`${API_BASE}/api/results/${resultId}`, {
@@ -313,9 +341,16 @@ export default function ReportValidate() {
                         </>
                       ) : (
                         <View style={{ marginTop: 4 }}>
+                          <View style={styles.calcRow}>
+                    {calcDirty && <Text style={styles.calcHint}>Values changed — tap Calculate to refresh VLDL / ratios</Text>}
+                    <TouchableOpacity style={[styles.calcBtn, calcDirty && styles.calcBtnOn]} onPress={() => calculate(r.id)} disabled={calcBusy}>
+                      {calcBusy ? <ActivityIndicator size="small" color={calcDirty ? '#fff' : '#C2410C'} />
+                        : <Text style={[styles.calcBtnText, calcDirty && { color: '#fff' }]}>🧮 Calculate</Text>}
+                    </TouchableOpacity>
+                  </View>
                           {editParams.map((p, i) => (
                             <View key={i} style={styles.editParamRow}>
-                              <Text style={styles.editParamName}>{p.name}</Text>
+                              <Text style={styles.editParamName}>{p.name}{p.calculated ? <Text style={styles.calcTag}>  · calculated</Text> : null}</Text>
                               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                                 <TextInput style={[styles.editParamInput, { flex: 1 }]} value={String(p.value)}
                                   onChangeText={v => setEditParamValue(i, v)} keyboardType="numeric" />
@@ -457,6 +492,12 @@ const styles = StyleSheet.create({
   checkLabel:      { color: '#0F172A', fontSize: 13, marginLeft: 8, flexShrink: 1 },
 
   // ── Edit-a-result mode (Report Validate) ──
+  calcRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
+  calcHint:       { color: '#C2410C', fontSize: 11, fontWeight: '700', flexShrink: 1 },
+  calcBtn:        { borderWidth: 1, borderColor: '#F9731666', backgroundColor: '#FFFFFF', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
+  calcBtnOn:      { backgroundColor: '#F97316', borderColor: '#F97316' },
+  calcBtnText:    { color: '#C2410C', fontWeight: '700', fontSize: 12.5 },
+  calcTag:        { color: '#C2410C', fontSize: 10, fontWeight: '700' },
   editParamRow:      { backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', padding: 10, marginBottom: 10 },
   editParamName:     { color: '#0F172A', fontSize: 13, fontWeight: '700', marginBottom: 8 },
   editParamInput:    { backgroundColor: '#F8FAFC', color: '#0F172A', paddingHorizontal: 10, paddingVertical: 9, borderRadius: 8, fontSize: 14, fontWeight: '700', borderWidth: 1.5, borderColor: '#17B9A1' },

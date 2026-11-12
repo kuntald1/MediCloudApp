@@ -105,6 +105,9 @@ export default function Bills() {
   const [cancelOpen, setCancelOpen]     = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelBusy, setCancelBusy]     = useState(false);
+  const [rmAsk, setRmAsk]       = useState<{ item: any; p: any } | null>(null);  // delete confirmation
+  const [rmReason, setRmReason] = useState('');
+  const [rmBusy, setRmBusy]     = useState(false);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -235,6 +238,38 @@ export default function Bills() {
         refunded > 0 ? `${updated.bill_no} cancelled · ${inr(refunded)} refunded` : `${updated.bill_no} cancelled`);
     } catch (e: any) { Alert.alert('Could not cancel', e.message); }
     finally { setCancelBusy(false); }
+  };
+
+  // Delete a test (or its whole group) — ask the server what would happen first
+  // (dry run) so the confirmation shows the real new total / refund.
+  const askRemove = async (it: any) => {
+    if (!sel) return;
+    setRmBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/billing/bills/${sel.id}/items/${it.id}/remove?dry_run=true`, {
+        method: 'POST', headers: { ...authHeader(), 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? 'Cannot delete this test'); }
+      setRmReason(''); setRmAsk({ item: it, p: await res.json() });
+    } catch (e: any) { Alert.alert('Cannot delete', e.message); }
+    finally { setRmBusy(false); }
+  };
+  const confirmRemove = async () => {
+    if (!sel || !rmAsk) return;
+    setRmBusy(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/billing/bills/${sel.id}/items/${rmAsk.item.id}/remove`, {
+        method: 'POST', headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: rmReason.trim() || null }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? 'Delete failed'); }
+      const updated = await res.json();
+      setSel(updated); fetchBills();
+      const label = rmAsk.p.label;
+      setRmAsk(null);
+      Alert.alert('Deleted', `${label} removed from ${updated.bill_no}`);
+    } catch (e: any) { Alert.alert('Could not delete', e.message); }
+    finally { setRmBusy(false); }
   };
 
   const payOnline = async () => {
@@ -495,7 +530,17 @@ export default function Bills() {
                             </View>
                           ) : null}
                         </View>
-                        <Text style={styles.itemPrice}>{inr(it.price)}</Text>
+                        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                          <Text style={styles.itemPrice}>{inr(it.price)}</Text>
+                          {/* a group has one price, so its delete sits on the first member and removes all of it */}
+                          {isAdmin && sel.status !== 'cancelled' &&
+                            (!it.package_id || sel.items!.findIndex((x: any) => x.package_id === it.package_id) === i) &&
+                            (it.package_id ? sel.items!.some((x: any) => x.package_id !== it.package_id) : sel.items!.length > 1) && (
+                            <TouchableOpacity style={styles.delBtn} onPress={() => askRemove(it)} disabled={rmBusy}>
+                              <Text style={styles.delBtnText}>🗑{it.package_id ? ' Group' : ''}</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -625,6 +670,54 @@ export default function Bills() {
             )}
           </View>
         </View>
+
+        {/* delete confirmation — nested so it shows above the bill sheet on iOS too */}
+        <Modal visible={!!rmAsk} transparent animationType="fade" onRequestClose={() => !rmBusy && setRmAsk(null)}>
+          <View style={styles.cfOverlay}>
+            {rmAsk && (
+              <View style={styles.cfBox}>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={styles.cfIcon}><Text style={{ fontSize: 20 }}>🗑</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cfTitle}>Delete {rmAsk.p.is_group ? 'test group' : 'test'}?</Text>
+                    <Text style={styles.cfText}>
+                      <Text style={{ fontWeight: '700' }}>{rmAsk.p.label}</Text> will be removed from {sel?.bill_no}
+                      {rmAsk.p.is_group ? ` — all ${rmAsk.p.removed.length} tests in it:` : '.'}
+                    </Text>
+                    {rmAsk.p.is_group && <Text style={styles.cfSmall}>{rmAsk.p.removed.map((r: any) => r.test_name).join(', ')}</Text>}
+                  </View>
+                </View>
+                <View style={styles.cfNums}>
+                  <View style={styles.tRow}><Text style={styles.tLabel}>Amount removed</Text><Text style={[styles.tVal, { color: '#DC2626' }]}>– {inr(rmAsk.p.removed_amount)}</Text></View>
+                  {rmAsk.p.discount_amount > 0 && <View style={styles.tRow}><Text style={styles.tLabel}>Discount</Text><Text style={styles.tVal}>– {inr(rmAsk.p.discount_amount)}</Text></View>}
+                  <View style={styles.tRow}><Text style={[styles.tLabel, { fontWeight: 'bold' }]}>New total</Text>
+                    <Text style={[styles.tVal, { fontWeight: 'bold' }]}><Text style={{ color: '#94A3B8', textDecorationLine: 'line-through', fontWeight: '400' }}>{inr(rmAsk.p.old_total)}</Text>  {inr(rmAsk.p.new_total)}</Text></View>
+                  {rmAsk.p.refund > 0 && <View style={styles.tRow}><Text style={[styles.tLabel, { fontWeight: 'bold' }]}>Refund to patient</Text><Text style={[styles.tVal, { color: '#B45309', fontWeight: 'bold' }]}>{inr(rmAsk.p.refund)}</Text></View>}
+                  <View style={styles.tRow}><Text style={styles.tLabel}>Due after delete</Text><Text style={[styles.tVal, { color: '#DC2626' }]}>{inr(rmAsk.p.new_due)}</Text></View>
+                  {!!rmAsk.p.organization_id && rmAsk.p.ledger_change !== 0 &&
+                    <View style={styles.tRow}><Text style={styles.tLabel}>Organisation ledger</Text><Text style={[styles.tVal, { color: '#6366f1' }]}>{rmAsk.p.ledger_change < 0 ? '– ' : '+ '}{inr(Math.abs(rmAsk.p.ledger_change))}</Text></View>}
+                </View>
+                {(rmAsk.p.reported || rmAsk.p.refund > 0) && (
+                  <View style={styles.cfWarn}>
+                    {rmAsk.p.reported && <Text style={styles.cfWarnText}>This test is already validated/reported — it will also disappear from the report.</Text>}
+                    {rmAsk.p.refund > 0 && <Text style={styles.cfWarnText}>{inr(rmAsk.p.refund)} is more than the new total — it will be recorded as a refund; hand it back at the counter.</Text>}
+                  </View>
+                )}
+                <Text style={[styles.payLabel, { marginTop: 12 }]}>REASON (OPTIONAL)</Text>
+                <TextInput style={styles.waInput} value={rmReason} onChangeText={setRmReason}
+                  placeholder="e.g. Test not required / added by mistake" placeholderTextColor="#94A3B8" />
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                  <TouchableOpacity style={[styles.cfBtn, { backgroundColor: '#F1F5F9' }]} onPress={() => setRmAsk(null)} disabled={rmBusy}>
+                    <Text style={[styles.cfBtnText, { color: '#475569' }]}>Keep it</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.cfBtn, { backgroundColor: '#DC2626' }]} onPress={confirmRemove} disabled={rmBusy}>
+                    {rmBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.cfBtnText}>Yes, delete</Text>}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        </Modal>
       </Modal>
     </View>
   );
@@ -716,5 +809,18 @@ const styles = StyleSheet.create({
   waitText:        { color: '#8B5CF6', fontSize: 12, fontWeight: '600' },
   creditBox:       { backgroundColor: '#8B5CF615', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: '#8B5CF633' },
   creditText:      { color: '#8B5CF6', fontSize: 13 },
+  delBtn:          { borderWidth: 1, borderColor: '#DC262640', backgroundColor: '#DC26260D', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  delBtnText:      { color: '#DC2626', fontSize: 11, fontWeight: '700' },
+  cfOverlay:       { flex: 1, backgroundColor: '#0F121888', justifyContent: 'center', padding: 20 },
+  cfBox:           { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18 },
+  cfIcon:          { width: 42, height: 42, borderRadius: 12, backgroundColor: '#DC26261A', alignItems: 'center', justifyContent: 'center' },
+  cfTitle:         { color: '#0F172A', fontSize: 16, fontWeight: '800' },
+  cfText:          { color: '#475569', fontSize: 13, marginTop: 3 },
+  cfSmall:         { color: '#94A3B8', fontSize: 11, marginTop: 4 },
+  cfNums:          { borderWidth: 1, borderColor: '#F1F5F9', borderRadius: 10, padding: 10, marginTop: 14 },
+  cfWarn:          { backgroundColor: '#F59E0B14', borderWidth: 1, borderColor: '#F59E0B4D', borderRadius: 9, padding: 9, marginTop: 10, gap: 4 },
+  cfWarnText:      { color: '#92400E', fontSize: 11.5 },
+  cfBtn:           { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  cfBtnText:       { color: '#fff', fontWeight: '700', fontSize: 14 },
   receiptRow:      { flexDirection: 'row', gap: 8, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
 });
