@@ -140,7 +140,9 @@ export default function NewBill() {
   const [showDiscPicker, setShowDiscPicker]     = useState(false);
   const [patientSearch, setPatientSearch]       = useState('');
   const [testSearch, setTestSearch]             = useState('');
-  const [pickTab, setPickTab]                   = useState<'tests' | 'groups'>('tests');  // which list the search box filters
+  // collapsible sections of the test picker; typing a search opens both
+  const [openSec, setOpenSec]                   = useState<{ groups: boolean; tests: boolean }>({ groups: true, tests: false });
+  useEffect(() => { if (testSearch.trim()) setOpenSec({ groups: true, tests: true }); }, [testSearch]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -666,71 +668,91 @@ export default function NewBill() {
               <Text style={styles.sectionHeaderIcon}>🧪</Text>
               <Text style={styles.sLabel}>ADD TESTS</Text>
             </View>
-            <View style={styles.pickTabs}>
-              {([['tests', 'Individual Tests'], ['groups', 'Test Groups']] as const).map(([k, l]) => (
-                <TouchableOpacity key={k} onPress={() => setPickTab(k)}
-                  style={[styles.pickTab, pickTab === k && styles.pickTabOn]}>
-                  <Text style={[styles.pickTabText, pickTab === k && styles.pickTabTextOn]}>{l}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
             <TextInput style={styles.searchInput} value={testSearch} onChangeText={setTestSearch}
-              placeholder={pickTab === 'groups' ? '🔍  Search test groups...' : '🔍  Search individual tests...'} placeholderTextColor="#475569" />
-            {pickTab === 'groups' && filteredGroups.length === 0 && (
-              <Text style={styles.pickEmpty}>No test groups found.</Text>
+              placeholder="🔍  Search tests or groups..." placeholderTextColor="#475569" />
+
+            {/* TEST GROUPS — collapsible */}
+            <TouchableOpacity style={[styles.secHead, openSec.groups && styles.secHeadOpen]} activeOpacity={0.8}
+              onPress={() => setOpenSec(o => ({ ...o, groups: !o.groups }))}>
+              <View style={[styles.secIcon, { backgroundColor: '#F973161A' }]}><Text style={styles.secIconText}>📦</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.secTitle}>Test Groups</Text>
+                <Text style={styles.secSub}>{filteredGroups.length} {testSearch ? 'matching' : 'available'}</Text>
+              </View>
+              {Object.keys(pickedGroups).length > 0 && (
+                <View style={styles.secCount}><Text style={styles.secCountText}>{Object.keys(pickedGroups).length} added</Text></View>
+              )}
+              <Text style={[styles.secChevron, openSec.groups && styles.secChevronOpen]}>›</Text>
+            </TouchableOpacity>
+            {openSec.groups && (
+              <View style={styles.secBody}>
+                {filteredGroups.length === 0 && <Text style={styles.pickEmpty}>No test groups found.</Text>}
+                {filteredGroups.map(g => {
+                  const sel = !!pickedGroups[g.id];
+                  const groupListPrice = effectiveGroupPrices[g.id]?.price ?? g.price;
+                  const groupListOverridden = effectiveGroupPrices[g.id]?.source === 'group' || effectiveGroupPrices[g.id]?.source === 'organization';
+                  return (
+                    <TouchableOpacity key={g.id} style={[styles.pickCard, sel && styles.pickCardSel]} activeOpacity={0.8} onPress={() => toggleGroup(g)}>
+                      <View style={[styles.pickCheck, sel && styles.pickCheckOn]}>{sel && <Text style={styles.pickCheckMark}>✓</Text>}</View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.pickName}>{g.name}</Text>
+                        <Text style={styles.pickSub} numberOfLines={2}>{g.tests.length} tests · {g.tests.map(t => t.name).join(' · ')}</Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 3 }}>
+                        <Text style={styles.pickPrice}>{inr(groupListPrice)}</Text>
+                        {groupListOverridden && <Text style={styles.overriddenTag}>org price</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             )}
-            {pickTab === 'groups' && filteredGroups.length > 0 && <>
-              {filteredGroups.map(g => {
-                const sel = !!pickedGroups[g.id];
-                const groupListPrice = effectiveGroupPrices[g.id]?.price ?? g.price;
-                const groupListOverridden = effectiveGroupPrices[g.id]?.source === 'group' || effectiveGroupPrices[g.id]?.source === 'organization';
-                return (
-                  <TouchableOpacity key={g.id} style={[styles.testItem, sel && styles.testItemSel]} onPress={() => toggleGroup(g)}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.testName}>{g.name}</Text>
-                      <Text style={styles.testSub}>{g.tests.map(t => t.name).join(' · ')}</Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.testPrice}>{inr(groupListPrice)}</Text>
-                      {groupListOverridden && <Text style={styles.overriddenTag}>org price</Text>}
-                      {sel && <Text style={styles.addedBadge}>✓ added</Text>}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </>}
-            {pickTab === 'tests' && filteredTests.length === 0 && (
-              <Text style={styles.pickEmpty}>No tests found.</Text>
+
+            {/* INDIVIDUAL TESTS — collapsible */}
+            <TouchableOpacity style={[styles.secHead, openSec.tests && styles.secHeadOpen, { marginTop: 10 }]} activeOpacity={0.8}
+              onPress={() => setOpenSec(o => ({ ...o, tests: !o.tests }))}>
+              <View style={[styles.secIcon, { backgroundColor: '#17B9A11A' }]}><Text style={styles.secIconText}>🧪</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.secTitle}>Individual Tests</Text>
+                <Text style={styles.secSub}>{filteredTests.length} {testSearch ? 'matching' : 'available'}</Text>
+              </View>
+              {Object.keys(pickedTests).length > 0 && (
+                <View style={styles.secCount}><Text style={styles.secCountText}>{Object.keys(pickedTests).length} added</Text></View>
+              )}
+              <Text style={[styles.secChevron, openSec.tests && styles.secChevronOpen]}>›</Text>
+            </TouchableOpacity>
+            {openSec.tests && (
+              <View style={styles.secBody}>
+                {filteredTests.length === 0 && <Text style={styles.pickEmpty}>No tests found.</Text>}
+                {filteredTests.map(t => {
+                  const sel = !!pickedTests[t.id]; const inGrp = groupMemberIds.has(t.id);
+                  const memberOfGroups = groups.filter(g => (g.test_ids ?? g.tests.map(mt => mt.id)).includes(t.id)).map(g => g.name);
+                  const listPrice = effectivePrices[t.id]?.price ?? t.price;
+                  const listOverridden = effectivePrices[t.id]?.source === 'group' || effectivePrices[t.id]?.source === 'organization';
+                  return (
+                    <TouchableOpacity key={t.id} activeOpacity={0.8}
+                      style={[styles.pickCard, sel && styles.pickCardSel, inGrp && { opacity: 0.45 }]}
+                      onPress={() => toggleTest(t)} disabled={inGrp}>
+                      <View style={[styles.pickCheck, (sel || inGrp) && styles.pickCheckOn]}>{(sel || inGrp) && <Text style={styles.pickCheckMark}>✓</Text>}</View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.pickName}>{t.name}</Text>
+                        {!!t.sample_type && <Text style={styles.pickSub}>{t.sample_type}</Text>}
+                        {memberOfGroups.length > 0 && (
+                          <View style={styles.partOfGroupChip}>
+                            <Text style={styles.partOfGroupChipText}>📦 part of: {memberOfGroups.join(', ')}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 3 }}>
+                        <Text style={styles.pickPrice}>{inr(listPrice)}</Text>
+                        {listOverridden && <Text style={styles.overriddenTag}>org price</Text>}
+                        {inGrp && <Text style={styles.inGrpBadge}>in group</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             )}
-            {pickTab === 'tests' && filteredTests.length > 0 && <>
-              {filteredTests.map(t => {
-                const sel = !!pickedTests[t.id]; const inGrp = groupMemberIds.has(t.id);
-                const memberOfGroups = groups.filter(g => (g.test_ids ?? g.tests.map(mt => mt.id)).includes(t.id)).map(g => g.name);
-                const listPrice = effectivePrices[t.id]?.price ?? t.price;
-                const listOverridden = effectivePrices[t.id]?.source === 'group' || effectivePrices[t.id]?.source === 'organization';
-                return (
-                  <TouchableOpacity key={t.id}
-                    style={[styles.testItem, sel && styles.testItemSel, inGrp && { opacity: 0.45 }]}
-                    onPress={() => toggleTest(t)} disabled={inGrp}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.testName}>{t.name}</Text>
-                      <Text style={styles.testSub}>{t.sample_type}</Text>
-                      {memberOfGroups.length > 0 && (
-                        <View style={styles.partOfGroupChip}>
-                          <Text style={styles.partOfGroupChipText}>📦 part of: {memberOfGroups.join(', ')}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.testPrice}>{inr(listPrice)}</Text>
-                      {listOverridden && <Text style={styles.overriddenTag}>org price</Text>}
-                      {inGrp && <Text style={styles.inGrpBadge}>in group</Text>}
-                      {sel && !inGrp && <Text style={styles.addedBadge}>✓ added</Text>}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </>}
           </View>
 
           {/* BILL SUMMARY */}
@@ -1087,11 +1109,25 @@ const styles = StyleSheet.create({
   selPh:          { flex: 1, color: '#475569', fontSize: 14 },
   arrow:          { color: '#475569' },
   billingTo:      { fontSize: 13, fontWeight: '600', marginTop: 6 },
-  pickTabs:       { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  pickTab:        { flex: 1, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderColor: '#E5E8EF', backgroundColor: '#FFFFFF', alignItems: 'center' },
-  pickTabOn:      { borderColor: '#F97316', backgroundColor: '#F973161A' },
-  pickTabText:    { color: '#8892A4', fontWeight: '700', fontSize: 12.5 },
-  pickTabTextOn:  { color: '#C2410C' },
+  secHead:        { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' },
+  secHeadOpen:    { borderColor: '#CBD5E1', backgroundColor: '#F8FAFC', borderBottomLeftRadius: 0, borderBottomRightRadius: 0 },
+  secIcon:        { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  secIconText:    { fontSize: 17 },
+  secTitle:       { color: '#0F172A', fontSize: 14.5, fontWeight: '800' },
+  secSub:         { color: '#64748B', fontSize: 11.5, marginTop: 1 },
+  secCount:       { backgroundColor: '#17B9A1', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 3 },
+  secCountText:   { color: '#FFFFFF', fontSize: 10.5, fontWeight: '800' },
+  secChevron:     { color: '#94A3B8', fontSize: 22, fontWeight: '700', marginLeft: 2, transform: [{ rotate: '0deg' }] },
+  secChevronOpen: { color: '#0F172A', transform: [{ rotate: '90deg' }] },
+  secBody:        { borderWidth: 1, borderTopWidth: 0, borderColor: '#CBD5E1', borderBottomLeftRadius: 12, borderBottomRightRadius: 12, padding: 8, backgroundColor: '#F8FAFC' },
+  pickCard:       { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 6, backgroundColor: '#FFFFFF' },
+  pickCardSel:    { borderColor: '#17B9A1', backgroundColor: '#17B9A10F' },
+  pickCheck:      { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
+  pickCheckOn:    { backgroundColor: '#17B9A1', borderColor: '#17B9A1' },
+  pickCheckMark:  { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
+  pickName:       { color: '#0F172A', fontSize: 14, fontWeight: '600' },
+  pickSub:        { color: '#64748B', fontSize: 11.5, marginTop: 2 },
+  pickPrice:      { color: '#0F172A', fontSize: 13.5, fontWeight: '800', backgroundColor: '#10B9811A', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, overflow: 'hidden' },
   pickEmpty:      { color: '#8892A4', fontSize: 13, paddingVertical: 14, textAlign: 'center' },
   searchInput:    { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10 },
   testItem:       { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 6, backgroundColor: '#FFFFFF' },

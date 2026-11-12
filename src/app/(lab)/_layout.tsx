@@ -27,6 +27,7 @@ const LAB_MENUS = [
   { name: 'doctor-commission', title: 'Doctor Commission',   icon: '💊' },
   { name: 'history-needed',    title: 'History Needed',      icon: '📜' },
   { name: 'sample-report',     title: 'Sample Report',       icon: '📄' },
+  { name: 'deleted-tests',     title: 'Deleted Tests',       icon: '🗑️' },
 ];
 
 // Menu Permissions (web) stores hidden items under the WEB sidebar's keys, so the
@@ -40,7 +41,7 @@ const MENU_KEY: Record<string, string> = {
   'users-staff': 'users', 'report-settings': 'reportsettings', 'new-bill': 'billing',
   'cost-estimate': 'costestimate',
   bills: 'bills', 'doctor-commission': 'doctors', 'history-needed': 'historyneeded',
-  'sample-report': 'samplereport',
+  'sample-report': 'samplereport', 'deleted-tests': 'deletedtests',
 };
 
 // Which menus this login may see. Lab admin / super admin always get everything
