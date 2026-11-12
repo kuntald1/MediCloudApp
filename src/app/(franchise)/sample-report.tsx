@@ -9,6 +9,21 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const when = (d?: string) => d ? new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+
+// Tests an admin took off the bill. A deleted group is one entry, members listed under it.
+const deletedEntries = (list: any[] = []) => {
+  const out: any[] = []; const byPkg: Record<string, any> = {};
+  list.forEach(d => {
+    if (d.package_id) {
+      const k = `${d.bill_no}:${d.package_id}`;
+      if (!byPkg[k]) { byPkg[k] = { ...d, name: d.package_name || 'Group', price: 0, members: [] }; out.push(byPkg[k]); }
+      byPkg[k].price += Number(d.price) || 0;
+      byPkg[k].members.push(d.test_name);
+    } else out.push({ ...d, name: d.test_name });
+  });
+  return out;
+};
 
 const STATUS_COLOR: Record<string, string> = {
   collected: '#3B82F6', received: '#06B6D4', tested: '#F97316',
@@ -276,7 +291,7 @@ export default function SampleReport() {
 
             {/* Tabs */}
             <View style={styles.tabRow}>
-              {([['tests', `Tests (${sel?.tests?.length ?? 0})`], ['payments', `Payments (${sel?.payment_history?.length ?? 0})`], ['history', `History (${sel?.clinical_history?.length ?? 0})`]] as const).map(([key, label]) => (
+              {([['tests', `Tests (${sel?.tests?.length ?? 0}${deletedEntries(sel?.deleted_tests).length ? ` · ${deletedEntries(sel?.deleted_tests).length} deleted` : ''})`], ['payments', `Payments (${sel?.payment_history?.length ?? 0})`], ['history', `History (${sel?.clinical_history?.length ?? 0})`]] as const).map(([key, label]) => (
                 <TouchableOpacity key={key} style={[styles.tab, tab === key && styles.tabActive]} onPress={() => setTab(key as any)}>
                   <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>
                 </TouchableOpacity>
@@ -351,6 +366,27 @@ export default function SampleReport() {
                         </View>
                       </View>
                     ))}
+                    {deletedEntries(sel?.deleted_tests).length > 0 && (
+                      <View style={{ marginTop: 12 }}>
+                        <Text style={styles.delHead}>DELETED FROM BILL</Text>
+                        {deletedEntries(sel?.deleted_tests).map((e: any, i: number) => (
+                          <View key={'d' + i} style={styles.delItem}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                <Text style={styles.delName}>{e.name}</Text>
+                                {e.package_id ? <Text style={styles.delPill}>GROUP</Text> : null}
+                                <Text style={[styles.delPill, { color: '#475569' }]}>DELETED</Text>
+                              </View>
+                              <Text style={styles.delPrice}>{inr(e.price)}</Text>
+                            </View>
+                            {e.members ? <Text style={styles.delMembers}>{e.members.join(', ')}</Text> : null}
+                            <Text style={styles.delMeta}>
+                              {e.bill_no} · {when(e.deleted_at)}{e.deleted_by ? ` · by ${e.deleted_by}` : ''}{e.reason ? ` · “${e.reason}”` : ''}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                   </>
                 );
               })()}
@@ -441,6 +477,13 @@ const styles = StyleSheet.create({
   tabActive:      { backgroundColor: '#17B9A1' },
   tabText:        { color: '#64748B', fontSize: 12, fontWeight: '600' },
   tabTextActive:  { color: '#fff' },
+  delHead:        { color: '#94A3B8', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
+  delItem:        { backgroundColor: '#64748B0D', paddingVertical: 9, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  delName:        { color: '#64748B', fontSize: 14, fontWeight: '600', textDecorationLine: 'line-through' },
+  delPill:        { color: '#64748B', backgroundColor: '#64748B1F', fontSize: 9.5, fontWeight: '800', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10, overflow: 'hidden' },
+  delPrice:       { color: '#94A3B8', fontSize: 13, fontWeight: '700', textDecorationLine: 'line-through' },
+  delMembers:     { color: '#94A3B8', fontSize: 11, marginTop: 2, textDecorationLine: 'line-through' },
+  delMeta:        { color: '#94A3B8', fontSize: 11, marginTop: 3 },
   detailItem:     { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
   itemMain:       { color: '#0F172A', fontSize: 14, fontWeight: '600' },
   itemSub:        { color: '#64748B', fontSize: 11, marginTop: 2 },
