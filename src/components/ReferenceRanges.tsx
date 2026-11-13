@@ -64,6 +64,12 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
   const [showDevicePicker, setShowDevicePicker] = useState(false);
   const [ask, setAsk]         = useState<typeof BLANK | null>(null);
   const [askMode, setAskMode] = useState<'copy' | 'move'>('copy');
+  // "Show ranges of a test": that test's own ranges plus the shared ones for the
+  // parameters it reports — i.e. exactly what a report of that test will use.
+  const [testId, setTestId]   = useState<number | null>(null);
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const [usage, setUsage]     = useState<{ id: number; declared: { name: string; parameter_id?: number | null }[] }[]>([]);
+  const [plist, setPlist]     = useState<{ id: number; name: string; aliases?: string | null }[]>([]);
 
   const load = useCallback(() => {
     fetch(`${API_BASE}/api/catalog/reference-ranges`, { headers: authHeader() })
@@ -78,6 +84,14 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
     fetch(`${API_BASE}/api/devices/`, { headers: authHeader() })
       .then(r => r.ok ? r.json() : [])
       .then(d => setDevices(Array.isArray(d) ? d : []))
+      .catch(() => {});
+    fetch(`${API_BASE}/api/catalog/parameters/usage`, { headers: authHeader() })
+      .then(r => r.ok ? r.json() : { tests: [] })
+      .then(d => setUsage(Array.isArray(d?.tests) ? d.tests : []))
+      .catch(() => {});
+    fetch(`${API_BASE}/api/catalog/parameters`, { headers: authHeader() })
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setPlist(Array.isArray(d) ? d : []))
       .catch(() => {});
   }, [load]);
 
@@ -101,10 +115,31 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
   // ranges first, then one block per test. Grouping by parameter instead
   // scattered a single test's settings down the screen.
   const q = search.trim().toLowerCase();
-  const shown = q
-    ? rows.filter(r => (r.param || '').toLowerCase().includes(q)
-                    || (testName(r.test_id) || '').toLowerCase().includes(q))
-    : rows;
+  const pkey = (v: any) => String(v || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+
+  // Names each parameter of the picked test goes by (its own name, the Parameter
+  // list's name and aliases), so a shared range written under any of them counts.
+  const pickedUsage = testId != null ? usage.find(t => t.id === testId) : null;
+  const declaredGroups = (pickedUsage?.declared || []).map(d => {
+    const keys = new Set<string>([pkey(d.name)]);
+    const prm = d.parameter_id ? plist.find(x => x.id === d.parameter_id) : null;
+    if (prm) {
+      keys.add(pkey(prm.name));
+      String(prm.aliases || '').split(/[,;]/).forEach(a => { if (pkey(a)) keys.add(pkey(a)); });
+    }
+    return { name: d.name, keys };
+  });
+  const declaredKeys = new Set<string>();
+  declaredGroups.forEach(g => g.keys.forEach(k => declaredKeys.add(k)));
+  const inPickedTest = (r: Range) => testId == null
+    || r.test_id === testId
+    || (r.test_id == null && declaredKeys.has(pkey(r.param)));
+  const noRange = testId != null ? declaredGroups.filter(g =>
+    !rows.some(r => (r as any).is_active !== false && inPickedTest(r) && g.keys.has(pkey(r.param)))).map(g => g.name) : [];
+
+  const shown = rows.filter(inPickedTest).filter(r => !q
+    || (r.param || '').toLowerCase().includes(q)
+    || (testName(r.test_id) || '').toLowerCase().includes(q));
   const byParam = (a: Range, b: Range) =>
     (a.param || '').toUpperCase().localeCompare((b.param || '').toUpperCase()) || (a.id - b.id);
   const groups: { key: string; common: boolean; title: string; rows: Range[] }[] = [];
@@ -214,6 +249,31 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
         <Text style={styles.addBtnText}>+ Add Range</Text>
       </TouchableOpacity>
 
+      <View style={[styles.searchWrap, { flexDirection: 'row', gap: 8 }]}>
+        <TouchableOpacity style={[styles.search, { flex: 1, justifyContent: 'center' }]} onPress={() => setShowFilterPicker(true)}>
+          <Text style={{ color: testId != null ? '#0F172A' : '#475569', fontSize: 14 }} numberOfLines={1}>
+            {testId != null ? (testName(testId) || `Test #${testId}`) : 'Show ranges of a test…'}
+          </Text>
+        </TouchableOpacity>
+        {testId != null && (
+          <TouchableOpacity style={[styles.search, { justifyContent: 'center' }]} onPress={() => setTestId(null)}>
+            <Text style={{ color: '#DC2626', fontWeight: '700' }}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      {testId != null && (
+        <View style={[styles.note, { margin: 12, marginBottom: 0, backgroundColor: '#F0FDFA', borderColor: '#99F6E4' }]}>
+          <Text style={[styles.noteText, { color: '#115E59' }]}>
+            Showing what a report of {testName(testId) || 'this test'} uses: the ranges set for this test, plus the shared ranges of the parameters it reports.
+          </Text>
+          {noRange.length > 0 && (
+            <Text style={[styles.noteText, { marginTop: 4 }]}>No active range for: {noRange.join(', ')} — these print whatever the analyser sent.</Text>
+          )}
+          {!pickedUsage && (
+            <Text style={[styles.noteText, { marginTop: 4 }]}>This test has no "Parameters printed on the report" list, so only its own ranges are shown.</Text>
+          )}
+        </View>
+      )}
       <View style={styles.searchWrap}>
         <TextInput style={styles.search} value={search} onChangeText={setSearch}
           placeholder="🔍  Search parameter or test..." placeholderTextColor="#475569" />
@@ -470,6 +530,10 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
           </View>
         </View>
       </Modal>
+
+      <Picker visible={showFilterPicker} title="Show ranges of which test?" searchable items={tests}
+        onPick={(id) => { setTestId(id); setShowFilterPicker(false); }}
+        onClose={() => setShowFilterPicker(false)} />
 
       <Picker visible={showTestPicker} title="Which test?" searchable items={tests}
         onPick={(id) => { setForm(f => f && ({ ...f, test_id: id })); setShowTestPicker(false); }}
