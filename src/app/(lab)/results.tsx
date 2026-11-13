@@ -14,7 +14,7 @@ const STAGES = ['', 'dispatched', 'received', 'tested', 'validated', 'reported']
 const toYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const orgLabel = (o: any) => (o.code && !String(o.name || '').toUpperCase().startsWith(String(o.code).trim().toUpperCase())) ? `${o.code} - ${o.name}` : o.name;
 
-interface Param  { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; param?: string; calculated?: boolean; flag_manual?: boolean; }
+interface Param  { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; param?: string; calculated?: boolean; flag_manual?: boolean; added?: boolean; }
 interface Result {
   id: number; barcode: string; patient_name: string;
   test_name?: string; status: string; lifecycle_status?: string;
@@ -62,6 +62,7 @@ const toPayload = (p: any) => ({
   value: isNaN(Number(p.value)) || String(p.value).trim() === '' ? p.value : Number(p.value),
   unit: p.unit, ref_min: p.ref_min, ref_max: p.ref_max, flag: p.flag || undefined,
   flag_manual: p.flag_manual || undefined, calculated: p.calculated || undefined,
+  added: p.added || undefined,
 });
 
 export default function Results() {
@@ -237,14 +238,39 @@ export default function Results() {
   const [calcBusy, setCalcBusy]   = useState(false);
   const [calcDirty, setCalcDirty] = useState(false);   // a value was edited since the last Calculate
 
+  const [addList, setAddList] = useState<Param[] | null>(null);   // rows offered by "+ Add parameter"
+
+  // Declared parameters the form has no row for (manual-entry ones like Myeloid,
+  // or a row just removed) come back from the server as blank rows.
+  const loadMissing = async (rows: Param[]): Promise<Param[]> => {
+    if (!sel) return [];
+    try {
+      const res = await fetch(`${API_BASE}/api/results/${sel.id}/missing-parameters`, {
+        method: 'POST', headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parameters: rows.map(toPayload) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return res.ok ? (data.parameters ?? []) : [];
+    } catch { return []; }
+  };
   const startEdit = () => {
     if (!sel) return;
-    setEditParams((sel.parsed_data?.parameters ?? []).map(p => ({ ...p })));
+    const base = (sel.parsed_data?.parameters ?? []).map(p => ({ ...p }));
+    setEditParams(base);
     setEditNote(sel.note ?? '');
     setCalcDirty(false);
+    setAddList(null);
     setEditing(true);
+    loadMissing(base).then(extra =>
+      setEditParams(prev => [...prev, ...extra.filter(e => !prev.some(p => p.name === e.name))]));
   };
   const cancelEdit = () => setEditing(false);
+  const removeParam = (i: number) => {
+    setEditParams(prev => prev.filter((_, idx) => idx !== i));
+    setCalcDirty(true); setAddList(null);
+  };
+  const openAdd = async () => setAddList(await loadMissing(editParams));
+  const addParam = (row: Param) => { setEditParams(prev => [...prev, row]); setAddList(null); };
 
   const setParamValue = (i: number, v: string) => {
     setCalcDirty(true);
@@ -604,7 +630,10 @@ export default function Results() {
                   )}
                   {editing && editParams.map((p, i) => (
                     <View key={i} style={styles.editParamRow}>
-                      <Text style={styles.editParamName}>{p.name}{p.calculated ? <Text style={styles.calcTag}>  · calculated</Text> : null}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={[styles.editParamName, { flex: 1 }]}>{p.name}{p.calculated ? <Text style={styles.calcTag}>  · calculated</Text> : null}{p.added ? <Text style={styles.calcTag}>  · enter manually</Text> : null}</Text>
+                        <TouchableOpacity onPress={() => removeParam(i)} hitSlop={8}><Text style={{ color: '#DC2626', fontSize: 16, fontWeight: '700' }}>✕</Text></TouchableOpacity>
+                      </View>
                       <TextInput style={styles.editParamInput} value={String(p.value)}
                         onChangeText={v => setParamValue(i, v)} keyboardType="numeric" />
                       <View style={styles.flagPicker}>
@@ -618,6 +647,23 @@ export default function Results() {
                       <Text style={styles.editParamRef}>{p.unit ?? ''} · {p.ref_min}–{p.ref_max}</Text>
                     </View>
                   ))}
+
+                  {editing && (
+                    <View style={{ marginTop: 8 }}>
+                      <TouchableOpacity style={styles.addParamBtn} onPress={openAdd}>
+                        <Text style={styles.addParamBtnText}>+ Add parameter</Text>
+                      </TouchableOpacity>
+                      {addList && (addList.length === 0
+                        ? <Text style={styles.calcHint}>Every parameter of this test is already listed.</Text>
+                        : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                            {addList.map((r, k) => (
+                              <TouchableOpacity key={k} style={styles.addParamChip} onPress={() => addParam(r)}>
+                                <Text style={styles.addParamChipText}>{r.name}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>)}
+                    </View>
+                  )}
 
                   {editing && (
                     <>
@@ -754,6 +800,10 @@ const styles = StyleSheet.create({
   paramName:      { flex: 1, color: '#94A3B8', fontSize: 12 },
   paramValue:     { color: '#0F172A', fontSize: 13, fontWeight: '600', marginRight: 8 },
   paramRef:       { color: '#475569', fontSize: 10, width: 60, textAlign: 'right' },
+  addParamBtn:    { alignSelf: 'flex-start', borderWidth: 1, borderStyle: 'dashed', borderColor: '#3B82F680', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#FFFFFF' },
+  addParamBtnText:{ color: '#1D4ED8', fontSize: 12, fontWeight: '700' },
+  addParamChip:   { borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: '#EFF6FF', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
+  addParamChipText:{ color: '#1D4ED8', fontSize: 12, fontWeight: '600' },
   calcRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
   calcHint:       { color: '#C2410C', fontSize: 11, fontWeight: '700', flexShrink: 1 },
   calcBtn:        { borderWidth: 1, borderColor: '#F9731666', backgroundColor: '#FFFFFF', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },

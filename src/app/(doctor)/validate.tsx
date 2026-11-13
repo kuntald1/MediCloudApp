@@ -12,7 +12,7 @@ interface PendingReport {
   status: string; needs_history: boolean; assigned_doctor_id?: number | null;
   organization_id?: number | null; created_at: string; accession_numbers?: string[];
 }
-interface Param { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; param?: string; calculated?: boolean; flag_manual?: boolean; }
+interface Param { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; param?: string; calculated?: boolean; flag_manual?: boolean; added?: boolean; }
 interface ResultItem { id: number; test_name: string; status: string; created_at: string; accession_number?: string; note?: string | null; parsed_data?: { protocol?: string; parameters?: Param[] }; }
 interface HistoryTrail { id: number; asked_for: string[]; note?: string | null; status: string; answer?: string | null; answer_checklist?: string[]; created_at: string; answered_at?: string | null; }
 interface ReportDetail extends PendingReport {
@@ -47,6 +47,7 @@ const toPayload = (p: any) => ({
   value: isNaN(Number(p.value)) || String(p.value).trim() === '' ? p.value : Number(p.value),
   unit: p.unit, ref_min: p.ref_min, ref_max: p.ref_max, flag: p.flag || undefined,
   flag_manual: p.flag_manual || undefined, calculated: p.calculated || undefined,
+  added: p.added || undefined,
 });
 
 export default function ReportValidate() {
@@ -124,13 +125,37 @@ export default function ReportValidate() {
   const [calcBusy, setCalcBusy]   = useState(false);
   const [calcDirty, setCalcDirty] = useState(false);   // a value was edited since the last Calculate
 
+  const [addList, setAddList] = useState<Param[] | null>(null);   // rows offered by "+ Add parameter"
+
+  // Declared parameters the form has no row for (manual-entry ones like Myeloid,
+  // or a row just removed) come back from the server as blank rows.
+  const loadMissing = async (resultId: number, rows: Param[]): Promise<Param[]> => {
+    try {
+      const res = await fetch(`${API_BASE}/api/results/${resultId}/missing-parameters`, {
+        method: 'POST', headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parameters: rows.map(toPayload) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return res.ok ? (data.parameters ?? []) : [];
+    } catch { return []; }
+  };
   const startEditResult = (r: ResultItem) => {
+    const base = (r.parsed_data?.parameters ?? []).map(p => ({ ...p }));
     setEditingResultId(r.id);
-    setEditParams((r.parsed_data?.parameters ?? []).map(p => ({ ...p })));
+    setEditParams(base);
     setEditNote(r.note ?? '');
     setCalcDirty(false);
+    setAddList(null);
+    loadMissing(r.id, base).then(extra =>
+      setEditParams(prev => [...prev, ...extra.filter(e => !prev.some(p => p.name === e.name))]));
   };
   const cancelEditResult = () => setEditingResultId(null);
+  const removeEditParam = (i: number) => {
+    setEditParams(prev => prev.filter((_, idx) => idx !== i));
+    setCalcDirty(true); setAddList(null);
+  };
+  const openAddParam = async (resultId: number) => setAddList(await loadMissing(resultId, editParams));
+  const addEditParam = (row: Param) => { setEditParams(prev => [...prev, row]); setAddList(null); };
 
   const setEditParamValue = (i: number, v: string) => {
     setCalcDirty(true);
@@ -350,7 +375,10 @@ export default function ReportValidate() {
                   </View>
                           {editParams.map((p, i) => (
                             <View key={i} style={styles.editParamRow}>
-                              <Text style={styles.editParamName}>{p.name}{p.calculated ? <Text style={styles.calcTag}>  · calculated</Text> : null}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <Text style={[styles.editParamName, { flex: 1 }]}>{p.name}{p.calculated ? <Text style={styles.calcTag}>  · calculated</Text> : null}{p.added ? <Text style={styles.calcTag}>  · enter manually</Text> : null}</Text>
+                                <TouchableOpacity onPress={() => removeEditParam(i)} hitSlop={8}><Text style={{ color: '#DC2626', fontSize: 16, fontWeight: '700' }}>✕</Text></TouchableOpacity>
+                              </View>
                               <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                                 <TextInput style={[styles.editParamInput, { flex: 1 }]} value={String(p.value)}
                                   onChangeText={v => setEditParamValue(i, v)} keyboardType="numeric" />
@@ -366,6 +394,20 @@ export default function ReportValidate() {
                               <Text style={styles.editParamRef}>{p.unit ?? ''} · {p.ref_min}–{p.ref_max}</Text>
                             </View>
                           ))}
+                          <View style={{ marginTop: 8 }}>
+                            <TouchableOpacity style={styles.addParamBtn} onPress={() => openAddParam(r.id)}>
+                              <Text style={styles.addParamBtnText}>+ Add parameter</Text>
+                            </TouchableOpacity>
+                            {addList && (addList.length === 0
+                              ? <Text style={styles.calcHint}>Every parameter of this test is already listed.</Text>
+                              : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                                  {addList.map((row, k) => (
+                                    <TouchableOpacity key={k} style={styles.addParamChip} onPress={() => addEditParam(row)}>
+                                      <Text style={styles.addParamChipText}>{row.name}</Text>
+                                    </TouchableOpacity>
+                                  ))}
+                                </View>)}
+                          </View>
                           <Text style={styles.noteLabel}>NOTE (shown at the end of the report if filled in)</Text>
                           <TextInput style={styles.noteInputSmall} value={editNote} onChangeText={setEditNote}
                             placeholder="e.g. Confirm fasting status before repeat" placeholderTextColor="#94A3B8"
@@ -492,6 +534,10 @@ const styles = StyleSheet.create({
   checkLabel:      { color: '#0F172A', fontSize: 13, marginLeft: 8, flexShrink: 1 },
 
   // ── Edit-a-result mode (Report Validate) ──
+  addParamBtn:    { alignSelf: 'flex-start', borderWidth: 1, borderStyle: 'dashed', borderColor: '#3B82F680', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#FFFFFF' },
+  addParamBtnText:{ color: '#1D4ED8', fontSize: 12, fontWeight: '700' },
+  addParamChip:   { borderWidth: 1, borderColor: '#BFDBFE', backgroundColor: '#EFF6FF', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
+  addParamChipText:{ color: '#1D4ED8', fontSize: 12, fontWeight: '600' },
   calcRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
   calcHint:       { color: '#C2410C', fontSize: 11, fontWeight: '700', flexShrink: 1 },
   calcBtn:        { borderWidth: 1, borderColor: '#F9731666', backgroundColor: '#FFFFFF', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
