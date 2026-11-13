@@ -53,11 +53,14 @@ const BLANK = {
 
 const num = (v: string) => { const s = (v ?? '').trim(); return s === '' ? null : Number(s); };
 
-export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
+// testId / search live in the parent so they survive switching tabs (a tab's own
+// state is lost when it closes) — a test picked here is still picked on return.
+export default function ReferenceRanges({ tests, testId, setTestId, search, setSearch }:
+  { tests: NamedId[]; testId: number | null; setTestId: (v: number | null) => void;
+    search: string; setSearch: (v: string) => void }) {
   const [rows, setRows]       = useState<Range[]>([]);
   const [devices, setDevices] = useState<NamedId[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState('');
   const [form, setForm]       = useState<typeof BLANK | null>(null);
   const [saving, setSaving]   = useState(false);
   const [showTestPicker, setShowTestPicker]     = useState(false);
@@ -66,7 +69,6 @@ export default function ReferenceRanges({ tests }: { tests: NamedId[] }) {
   const [askMode, setAskMode] = useState<'copy' | 'move'>('copy');
   // "Show ranges of a test": that test's own ranges plus the shared ones for the
   // parameters it reports — i.e. exactly what a report of that test will use.
-  const [testId, setTestId]   = useState<number | null>(null);
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const [usage, setUsage]     = useState<{ id: number; declared: { name: string; parameter_id?: number | null }[] }[]>([]);
   const [plist, setPlist]     = useState<{ id: number; name: string; aliases?: string | null }[]>([]);

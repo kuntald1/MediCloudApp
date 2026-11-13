@@ -20,6 +20,9 @@ type Tab = 'tests' | 'groups' | 'ranges';
 
 export default function TestsCatalog() {
   const [tab, setTab]           = useState<Tab>('tests');
+  // Reference Ranges filter, kept here so it survives switching tabs.
+  const [rangeTestId, setRangeTestId] = useState<number | null>(null);
+  const [rangeSearch, setRangeSearch] = useState('');
   const [tests, setTests]       = useState<Test[]>([]);
   const [groups, setGroups]     = useState<TestGroup[]>([]);
   const [tubes, setTubes]       = useState<Tube[]>([]);
@@ -302,7 +305,7 @@ export default function TestsCatalog() {
       </View>
 
       {tab === 'ranges' ? (
-        <ReferenceRanges tests={tests} />
+        <ReferenceRanges tests={tests} testId={rangeTestId} setTestId={setRangeTestId} search={rangeSearch} setSearch={setRangeSearch} />
       ) : tab === 'tests' ? (
         <>
           <CatalogExcel kind="tests" noun="Tests" onDone={fetchAll} />
