@@ -114,7 +114,7 @@ export default function Results() {
   const [editAllOpen, setEditAllOpen] = useState(false);
   const [openRows, setOpenRows]       = useState<Record<number, boolean>>({});
   const canEditResults = CAN_EDIT_RESULTS.includes(String(getUser()?.role ?? '').toLowerCase());
-  const editableResults = results.filter(r => !isOutsourced(r) && r.status !== 'outsource');
+  const editableResults = results.filter(r => r.id != null && !isOutsourced(r) && r.status !== 'outsource');
   const afterRowSaved = (id: number, data: any) => setResults(prev => prev.map(r => r.id === id
     ? { ...r, parsed_data: data.parsed_data ?? r.parsed_data, note: data.note ?? r.note,
         edited: data.parsed_data?.edited ?? r.edited } : r));
@@ -274,6 +274,11 @@ export default function Results() {
       return res.ok ? (data.parameters ?? []) : [];
     } catch { return []; }
   };
+  // One rule for "this result can be edited right now", so the Edit link and tapping a
+  // parameter row can never disagree about who may edit what.
+  const canEditSel = !!sel && !editing && canEditResults && !(sel as any).locked
+    && sel.status !== 'outsource' && sel.id != null;   // a report with no parameters left can still be opened to add them back
+
   const startEdit = () => {
     if (!sel) return;
     const base = (sel.parsed_data?.parameters ?? []).map(p => ({ ...p }));
@@ -603,7 +608,7 @@ export default function Results() {
                     <Text style={styles.modalSub}>Result #{sel.id}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                    {!editing && (
+                    {canEditSel && (
                       <TouchableOpacity onPress={startEdit}>
                         <Text style={styles.editLink}>✎ Edit</Text>
                       </TouchableOpacity>
@@ -640,10 +645,18 @@ export default function Results() {
 
                   <Text style={styles.paramTitle}>PARAMETERS ({(editing ? editParams : sel.parsed_data?.parameters ?? []).length})</Text>
 
+                  {!editing && (sel.parsed_data?.parameters ?? []).length === 0 && (
+                    <TouchableOpacity disabled={!canEditSel} onPress={startEdit}>
+                      <Text style={{ color: '#94A3B8', fontSize: 12.5, paddingVertical: 14, textAlign: 'center' }}>
+                        No parameters on this report.{canEditSel ? '  Tap to add them back →' : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                   {!editing && (sel.parsed_data?.parameters ?? []).map((p, i) => {
                     const flag = p.flag === 'H' || p.flag === 'L';
                     return (
-                      <View key={i} style={styles.paramRow}>
+                      <TouchableOpacity key={i} style={styles.paramRow} activeOpacity={canEditSel ? 0.6 : 1}
+                        onPress={() => { if (canEditSel) startEdit(); }}>
                         <Text style={styles.paramName}>{p.name}</Text>
                         <Text style={[styles.paramValue, flag && { color: '#EF4444', fontWeight: '700' }]}>
                           {p.value}{p.unit ? ` ${p.unit}` : ''}{p.flag ? ` ${p.flag === 'H' ? '↑' : '↓'}` : ''}
@@ -651,7 +664,7 @@ export default function Results() {
                         {(p.ref_min != null || p.ref_max != null) && (
                           <Text style={styles.paramRef}>{p.ref_min}–{p.ref_max}</Text>
                         )}
-                      </View>
+                      </TouchableOpacity>
                     );
                   })}
 
