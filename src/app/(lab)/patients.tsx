@@ -120,7 +120,10 @@ export default function Patients() {
   // A phlebotomist registers against his own branch only: Branch is pre-filled
   // and read-only, and Franchise (B2B) is not his to choose.
   const isPhlebotomist = currentUser?.role === 'phlebotomist';
-  const lockedBranchId: number | null = (isPhlebotomist && currentUser?.branch_id) ? Number(currentUser.branch_id) : null;
+  // A receptionist works at one branch too: Branch is pre-filled for her as well,
+  // but unlike a phlebotomist she still chooses the Franchise.
+  const isBranchStaff = isPhlebotomist || currentUser?.role === 'receptionist';
+  const lockedBranchId: number | null = (isBranchStaff && currentUser?.branch_id) ? Number(currentUser.branch_id) : null;
   const isBranchLocked = lockedBranchId != null;
 
   // ── Fetch patients
