@@ -14,7 +14,6 @@ import {
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const STATUS_COLOR: Record<string, string> = { unpaid: '#EF4444', partial: '#F59E0B', paid: '#10B981', credit: '#8B5CF6', cancelled: '#64748B' };
 // a bill can only be cancelled while every test is still at one of these stages
-const CANCELLABLE = ['collected', 'received'];
 
 // ── Sample-label printing (same client-side pattern as New Bill: barcode PNG
 // via @bwip-js/react-native embedded as a static <img>, handed to expo-print).
@@ -424,7 +423,8 @@ export default function Bills() {
   const isPaid = sel && due <= 0;
   const isCredit = sel?.status === 'credit';
   // tests that have already moved past 'received' — these block cancellation
-  const blockingItems = (sel?.items ?? []).filter((it: any) => !CANCELLABLE.includes(it.status ?? 'collected'));
+  const reportedCount = (sel?.items ?? []).filter((it: any) => ['validated', 'reported'].includes(it.status)).length;
+  const isOrgBill = !!((sel as any)?.organization_id || (sel as any)?.organization_name);
   const refundedAmt = Math.abs((sel?.payments ?? [])
     .filter((p: any) => (Number(p.amount) || 0) < 0)
     .reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0));
@@ -631,19 +631,9 @@ export default function Bills() {
                   )}
                 </View>
 
-                {/* ── CANCEL BILL — admin only, allowed up to and including 'received' ── */}
+                {/* ── CANCEL BILL — admin only, at any stage (same freedom as Delete Test) ── */}
                 {isAdmin && !isCancelled && (
-                  blockingItems.length > 0 ? (
-                    <View style={styles.cantCancelBox}>
-                      <Text style={styles.cantCancelTitle}>This bill can no longer be cancelled</Text>
-                      <Text style={styles.cantCancelSub}>
-                        Work has already started on {blockingItems.length === 1 ? 'this test' : 'these tests'}:{' '}
-                        {blockingItems.slice(0, 4).map((it: any) =>
-                          `${it.package_name ? `${it.package_name} (${it.test_name})` : it.test_name} — ${it.status}`).join('; ')}
-                        {blockingItems.length > 4 ? ` and ${blockingItems.length - 4} more` : ''}.
-                      </Text>
-                    </View>
-                  ) : !cancelOpen ? (
+                  !cancelOpen ? (
                     <TouchableOpacity style={styles.cancelOpenBtn} onPress={() => setCancelOpen(true)}>
                       <Text style={styles.cancelOpenBtnText}>Cancel this bill</Text>
                     </TouchableOpacity>
@@ -663,6 +653,20 @@ export default function Bills() {
                         <View style={styles.refundWarnBox}>
                           <Text style={styles.refundWarnText}>
                             {inr(sel?.paid ?? 0)} has been collected on this bill. Cancelling records a refund of {inr(sel?.paid ?? 0)} and sets the bill to ₹0 — hand the money back at the counter.
+                          </Text>
+                        </View>
+                      )}
+                      {reportedCount > 0 && (
+                        <View style={styles.refundWarnBox}>
+                          <Text style={styles.refundWarnText}>
+                            {reportedCount} test(s) on this bill are already validated / reported. Cancelling stops their reports being issued.
+                          </Text>
+                        </View>
+                      )}
+                      {isOrgBill && (
+                        <View style={styles.refundWarnBox}>
+                          <Text style={styles.refundWarnText}>
+                            This bill is on an organization's account — its statement is put back by this bill's amount, the same way Delete Test does.
                           </Text>
                         </View>
                       )}
