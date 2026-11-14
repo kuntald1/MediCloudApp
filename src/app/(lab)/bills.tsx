@@ -77,6 +77,10 @@ interface Bill {
   cancel_reason?: string | null; cancelled_at?: string | null;
 }
 
+// Delete Test and Cancel Bill are only open while a test is still collected / received.
+const CANCELLABLE = ['collected', 'received'];
+const canRemove = (it: any) => CANCELLABLE.includes(it?.status ?? 'collected');
+
 export default function Bills() {
   const isFranchise = getUser()?.role === 'franchise';
   const isAdmin = ['lab_admin', 'super_admin'].includes(getUser()?.role ?? '');
@@ -423,7 +427,7 @@ export default function Bills() {
   const isPaid = sel && due <= 0;
   const isCredit = sel?.status === 'credit';
   // tests that have already moved past 'received' — these block cancellation
-  const reportedCount = (sel?.items ?? []).filter((it: any) => ['validated', 'reported'].includes(it.status)).length;
+  const blockingItems = (sel?.items ?? []).filter((it: any) => !canRemove(it));
   const isOrgBill = !!((sel as any)?.organization_id || (sel as any)?.organization_name);
   const refundedAmt = Math.abs((sel?.payments ?? [])
     .filter((p: any) => (Number(p.amount) || 0) < 0)
@@ -556,9 +560,13 @@ export default function Bills() {
                           {isAdmin && sel.status !== 'cancelled' &&
                             (!it.package_id || sel.items!.findIndex((x: any) => x.package_id === it.package_id) === i) &&
                             (it.package_id ? sel.items!.some((x: any) => x.package_id !== it.package_id) : sel.items!.length > 1) && (
-                            <TouchableOpacity style={styles.delBtn} onPress={() => askRemove(it)} disabled={rmBusy}>
-                              <Text style={styles.delBtnText}>🗑{it.package_id ? ' Group' : ''}</Text>
-                            </TouchableOpacity>
+                            (it.package_id ? sel.items!.filter((x: any) => x.package_id === it.package_id).every(canRemove) : canRemove(it)) ? (
+                              <TouchableOpacity style={styles.delBtn} onPress={() => askRemove(it)} disabled={rmBusy}>
+                                <Text style={styles.delBtnText}>🗑{it.package_id ? ' Group' : ''}</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <Text style={styles.lockedNote}>🔒 locked</Text>
+                            )
                           )}
                         </View>
                       </View>
@@ -631,9 +639,19 @@ export default function Bills() {
                   )}
                 </View>
 
-                {/* ── CANCEL BILL — admin only, at any stage (same freedom as Delete Test) ── */}
+                {/* ── CANCEL BILL — admin only, allowed up to and including 'received' ── */}
                 {isAdmin && !isCancelled && (
-                  !cancelOpen ? (
+                  blockingItems.length > 0 ? (
+                    <View style={styles.cantCancelBox}>
+                      <Text style={styles.cantCancelTitle}>This bill can no longer be cancelled</Text>
+                      <Text style={styles.cantCancelSub}>
+                        Work has already started on {blockingItems.length === 1 ? 'this test' : 'these tests'}:{' '}
+                        {blockingItems.slice(0, 4).map((it: any) =>
+                          `${it.package_name ? `${it.package_name} (${it.test_name})` : it.test_name} — ${it.status}`).join('; ')}
+                        {blockingItems.length > 4 ? ` and ${blockingItems.length - 4} more` : ''}.
+                      </Text>
+                    </View>
+                  ) : !cancelOpen ? (
                     <TouchableOpacity style={styles.cancelOpenBtn} onPress={() => setCancelOpen(true)}>
                       <Text style={styles.cancelOpenBtnText}>Cancel this bill</Text>
                     </TouchableOpacity>
@@ -653,13 +671,6 @@ export default function Bills() {
                         <View style={styles.refundWarnBox}>
                           <Text style={styles.refundWarnText}>
                             {inr(sel?.paid ?? 0)} has been collected on this bill. Cancelling records a refund of {inr(sel?.paid ?? 0)} and sets the bill to ₹0 — hand the money back at the counter.
-                          </Text>
-                        </View>
-                      )}
-                      {reportedCount > 0 && (
-                        <View style={styles.refundWarnBox}>
-                          <Text style={styles.refundWarnText}>
-                            {reportedCount} test(s) on this bill are already validated / reported. Cancelling stops their reports being issued.
                           </Text>
                         </View>
                       )}
@@ -836,6 +847,7 @@ const styles = StyleSheet.create({
   creditBox:       { backgroundColor: '#8B5CF615', borderRadius: 8, padding: 10, marginTop: 8, borderWidth: 1, borderColor: '#8B5CF633' },
   creditText:      { color: '#8B5CF6', fontSize: 13 },
   delBtn:          { borderWidth: 1, borderColor: '#DC262640', backgroundColor: '#DC26260D', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  lockedNote:      { color: '#94A3B8', fontSize: 10.5, fontWeight: '600' },
   delBtnText:      { color: '#DC2626', fontSize: 11, fontWeight: '700' },
   cfOverlay:       { flex: 1, backgroundColor: '#0F121888', justifyContent: 'center', padding: 20 },
   cfBox:           { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18 },
