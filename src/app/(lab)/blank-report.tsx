@@ -24,6 +24,7 @@ type Line = {
   id: number; test_name: string; package_name?: string | null;
   accession_number?: string | null; status?: string | null;
   bill_no: string; patient_name: string; barcode: string;
+  test_id?: number | null; package_id?: number | null;
 };
 
 export default function BlankReport() {
@@ -33,7 +34,7 @@ export default function BlankReport() {
   const [patientName, setPatientName] = useState('');
   const [fromDate, setFromDate]       = useState('');
   const [toDate, setToDate]           = useState('');
-  const [stage, setStage]             = useState('');
+  const [stage, setStage]             = useState('received');   // tests still waiting for a result
   const [testPick, setTestPick]       = useState('');
   const testOptions                   = useTestOptions();
 
@@ -60,14 +61,21 @@ export default function BlankReport() {
         { headers: authHeader() });
       const data = await res.json();
       const bills = Array.isArray(data) ? data : (data.items ?? []);
+      // the API matches whole bills; keep only the lines at the chosen status / test / group
+      const tp = testPick;
       setLines(bills.flatMap((b: any) => (b.items ?? []).map((it: any) => ({
         ...it, bill_no: b.bill_no, patient_name: b.patient_name, barcode: b.barcode,
-      }))));
+      }))).filter((it: any) => !stage || it.status === stage)
+        .filter((it: any) => !tp || (tp.startsWith('p:') ? String(it.package_id) === tp.slice(2)
+                                                          : String(it.test_id) === tp.slice(2))));
       setPicked([]);
       setSearched(true);
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setLoading(false); }
   }, [barcode, patientName, fromDate, toDate, stage, testPick]);
+
+  // open on the tests still waiting for a result, without needing a tap
+  useEffect(() => { if (allowed) search(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const onRefresh = async () => { setRefreshing(true); await search(); setRefreshing(false); };
 
@@ -87,6 +95,21 @@ export default function BlankReport() {
       setMade(data.results ?? []);
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setBusy(false); }
+  };
+
+  // A report with real values is a tested one: move its billed test to "tested" so it
+  // reaches the doctor's Report Validate queue. Tests already further along stay put.
+  const markTested = async (r: any, data: any) => {
+    const filled = (data?.parsed_data?.parameters ?? []).some((p: any) => String(p.value ?? '').trim() !== '');
+    const line = lines.find(l => l.id === r.bill_item_id);
+    if (!filled || !r.bill_item_id || (line && !['collected', 'received'].includes(String(line.status)))) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/sample-status/advance`, {
+        method: 'POST', headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_ids: [r.bill_item_id], status: 'tested' }),
+      });
+      if (res.ok) search();
+    } catch { /* values are saved either way; Change Status can move it by hand */ }
   };
 
   const sendToOutsource = async () => {
@@ -221,8 +244,11 @@ export default function BlankReport() {
                   <Text style={styles.madeMeta} numberOfLines={1}>{r.test_name} · {r.accession_number || '—'}</Text>
                 </View>
                 <View style={styles.madeBody}>
-                  <ResultEditor result={r} onSaved={data => setMade(prev => prev.map(x => x.id === r.id
-                    ? { ...x, parsed_data: data.parsed_data ?? x.parsed_data, note: data.note ?? x.note } : x))} />
+                  <ResultEditor result={r} onSaved={data => {
+                    setMade(prev => prev.map(x => x.id === r.id
+                      ? { ...x, parsed_data: data.parsed_data ?? x.parsed_data, note: data.note ?? x.note } : x));
+                    markTested(r, data);
+                  }} />
                 </View>
               </View>
             ))}
