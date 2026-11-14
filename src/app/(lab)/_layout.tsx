@@ -27,6 +27,7 @@ const LAB_MENUS = [
   { name: 'doctor-commission', title: 'Doctor Commission',   icon: '💊' },
   { name: 'history-needed',    title: 'History Needed',      icon: '📜' },
   { name: 'sample-report',     title: 'Sample Report',       icon: '📄' },
+  { name: 'blank-report',      title: 'Blank Report',        icon: '📝' },
   { name: 'deleted-tests',     title: 'Deleted Tests',       icon: '🗑️' },
 ];
 
@@ -41,7 +42,8 @@ const MENU_KEY: Record<string, string> = {
   'users-staff': 'users', 'report-settings': 'reportsettings', 'new-bill': 'billing',
   'cost-estimate': 'costestimate',
   bills: 'bills', 'doctor-commission': 'doctors', 'history-needed': 'historyneeded',
-  'sample-report': 'samplereport', 'deleted-tests': 'deletedtests',
+  'sample-report': 'samplereport', 'blank-report': 'blankreport',
+  'deleted-tests': 'deletedtests',
 };
 
 // Which menus this login may see. Lab admin / super admin always get everything

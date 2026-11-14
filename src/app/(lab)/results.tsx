@@ -1,4 +1,6 @@
-import { authHeader, API_BASE, getToken } from '../../../src/utils/auth';
+import { authHeader, API_BASE, getToken, getUser } from '../../../src/utils/auth';
+import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
+import ResultEditor from '../../components/ResultEditor';
 import { uploadPickedFile } from '../../../src/utils/uploadPickedFile';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -35,6 +37,10 @@ interface Attachment {
 // NOTE: confirm the exact field the live /api/results/ response uses to mark
 // an outsourced-origin result — checking several plausible names defensively
 // until that's verified, same caution as other endpoints in this app.
+// Who may edit a result — the same four roles the web Results page gates its
+// Edit button on, and the only ones the backend accepts a save from.
+const CAN_EDIT_RESULTS = ['super_admin', 'lab_admin', 'pathologist', 'technician'];
+
 const isOutsourced = (r: Result) =>
   !!r.is_outsourced || r.source === 'outsourced' || r.status === 'outsource' || r.lifecycle_status === 'outsource';
 
@@ -77,8 +83,13 @@ export default function Results() {
   const [orgId, setOrgId]           = useState<number | null>(null);
   const [orgQuery, setOrgQuery]     = useState('');
   const [patientId, setPatientId]   = useState('');
-  const [fromDate, setFromDate]     = useState('');
-  const [toDate, setToDate]         = useState('');
+  // The list opens on today's work — a lab looks at what came in today far more
+  // often than at everything ever run.
+  const TODAY = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const [testPick, setTestPick]     = useState('');   // "t:<id>" or "p:<id>" — see components/TestFilter
+  const testOptions                 = useTestOptions();
+  const [fromDate, setFromDate]     = useState(TODAY);
+  const [toDate, setToDate]         = useState(TODAY);
   const [stage, setStage]           = useState('');
   const [picker, setPicker]         = useState<'org' | 'stage' | 'from' | 'to' | null>(null);
   const [zipBusy, setZipBusy]       = useState(false);
@@ -99,6 +110,15 @@ export default function Results() {
   const [attUploading, setAttUploading]       = useState(false);
 
   // Edit mode (lab admin only — franchise portal has no Edit at all)
+  // ---- Edit All: every result now listed, each editable in place ----
+  const [editAllOpen, setEditAllOpen] = useState(false);
+  const [openRows, setOpenRows]       = useState<Record<number, boolean>>({});
+  const canEditResults = CAN_EDIT_RESULTS.includes(String(getUser()?.role ?? '').toLowerCase());
+  const editableResults = results.filter(r => !isOutsourced(r) && r.status !== 'outsource');
+  const afterRowSaved = (id: number, data: any) => setResults(prev => prev.map(r => r.id === id
+    ? { ...r, parsed_data: data.parsed_data ?? r.parsed_data, note: data.note ?? r.note,
+        edited: data.parsed_data?.edited ?? r.edited } : r));
+
   const [editing, setEditing]     = useState(false);
   const [editParams, setEditParams] = useState<Param[]>([]);
   const [editNote, setEditNote]     = useState('');
@@ -113,6 +133,7 @@ export default function Results() {
     if (fromDate)           qs.set('date_from', fromDate);
     if (toDate)             qs.set('date_to', toDate);
     if (stage)              qs.set('stage', stage);
+    Object.entries(splitTestFilter(testPick)).forEach(([k, v]) => qs.set(k, v));
     return qs;
   };
 
@@ -143,8 +164,8 @@ export default function Results() {
     setZipBusy(false);
   };
 
-  const activeFilters = [orgId, patientId.trim(), fromDate, toDate, stage].filter(Boolean).length;
-  const clearFilters = () => { setOrgId(null); setPatientId(''); setFromDate(''); setToDate(''); setStage(''); };
+  const activeFilters = [orgId, patientId.trim(), fromDate, toDate, stage, testPick].filter(Boolean).length;
+  const clearFilters = () => { setOrgId(null); setPatientId(''); setFromDate(TODAY); setToDate(TODAY); setStage(''); setTestPick(''); };
 
   const fetchResults = useCallback(async () => {
     try {
@@ -155,7 +176,7 @@ export default function Results() {
       setResults(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [search, patientName, orgId, patientId, fromDate, toDate, stage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, patientName, orgId, patientId, fromDate, toDate, stage, testPick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setLoading(true); fetchResults(); }, [fetchResults]);
   const onRefresh = () => { setRefreshing(true); fetchResults(); };
@@ -489,6 +510,11 @@ export default function Results() {
               </TouchableOpacity>
             </View>
             <View style={styles.fRow}>
+              <View style={{ flex: 1 }}>
+                <TestFilter value={testPick} onChange={setTestPick} options={testOptions} />
+              </View>
+            </View>
+            <View style={styles.fRow}>
               {activeFilters > 0 && (
                 <TouchableOpacity style={styles.clearBtn} onPress={clearFilters}>
                   <Text style={styles.clearText}>Clear</Text>
@@ -498,6 +524,16 @@ export default function Results() {
                 {zipBusy ? <ActivityIndicator color="#0E7D6B" /> : <Text style={styles.zipText}>🗜️  Download Zip</Text>}
               </TouchableOpacity>
             </View>
+            {canEditResults && (
+              <View style={styles.fRow}>
+                <TouchableOpacity
+                  style={[styles.editAllBtn, editableResults.length === 0 && { opacity: 0.5 }]}
+                  disabled={editableResults.length === 0}
+                  onPress={() => { setOpenRows({}); setEditAllOpen(true); }}>
+                  <Text style={styles.editAllText}>✎  Edit All ({editableResults.length})</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <Text style={styles.fHint}>Download Zip: every finished report between the dates, one PDF per patient.</Text>
           </View>
         )}
@@ -743,11 +779,73 @@ export default function Results() {
           </View>
         </View>
       </Modal>
+
+      {/* Edit All — every result now listed, one collapsible block each, each
+          with its own Save. Several reports can share a barcode, so they are
+          listed one per report rather than one per barcode. */}
+      <Modal visible={editAllOpen} transparent animationType="slide" onRequestClose={() => setEditAllOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Edit All</Text>
+                <Text style={styles.modalSub}>
+                  {editableResults.length} report(s){fromDate || toDate ? ` · ${fromDate || '…'} to ${toDate || '…'}` : ''} — each saves on its own
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setEditAllOpen(false)} style={styles.closeX}>
+                <Text style={styles.closeXText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled">
+              {editableResults.length === 0 && (
+                <Text style={styles.editAllEmpty}>Nothing in this list can be edited.</Text>
+              )}
+              {editableResults.map(r => (
+                <View key={r.id} style={styles.editAllCard}>
+                  <TouchableOpacity style={[styles.editAllHead, openRows[r.id] && styles.editAllHeadOn]}
+                    onPress={() => setOpenRows(o => ({ ...o, [r.id]: !o[r.id] }))}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.editAllName} numberOfLines={1}>
+                        {r.patient_name || '—'}  <Text style={styles.editAllCode}>{r.barcode || '—'}</Text>
+                      </Text>
+                      <Text style={styles.editAllMeta} numberOfLines={1}>
+                        {r.test_name || `Result #${r.id}`} · {r.accession_number || '—'} · {(r.parsed_data?.parameters ?? []).length} params
+                      </Text>
+                    </View>
+                    <Text style={styles.editAllChevron}>{openRows[r.id] ? '▲' : '▼'}</Text>
+                  </TouchableOpacity>
+                  {openRows[r.id] && (
+                    <View style={styles.editAllBody}>
+                      <ResultEditor result={r as any} onSaved={data => afterRowSaved(r.id, data)} />
+                    </View>
+                  )}
+                </View>
+              ))}
+              <View style={{ height: 8 }} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // Edit All
+  editAllBtn:     { flex: 1, borderWidth: 1.5, borderColor: 'rgba(249,115,22,0.5)', backgroundColor: '#fff',
+                    borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  editAllText:    { color: '#C2410C', fontWeight: 'bold', fontSize: 13 },
+  editAllEmpty:   { color: '#94A3B8', fontSize: 13, textAlign: 'center', paddingVertical: 24 },
+  editAllCard:    { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 11, overflow: 'hidden', marginBottom: 9 },
+  editAllHead:    { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 11, backgroundColor: '#F8FAFC' },
+  editAllHeadOn:  { backgroundColor: '#FFF7ED' },
+  editAllName:    { color: '#0F172A', fontSize: 13.5, fontWeight: '700' },
+  editAllCode:    { color: '#C2410C', fontWeight: '700' },
+  editAllMeta:    { color: '#94A3B8', fontSize: 11, marginTop: 2 },
+  editAllChevron: { color: '#94A3B8', fontSize: 12 },
+  editAllBody:    { padding: 11, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#fff' },
   container:      { flex: 1, backgroundColor: '#F8FAFC' },
   searchWrap:     { padding: 12 },
   moreBtn:        { marginTop: 8, paddingVertical: 6 },

@@ -1,4 +1,5 @@
 import { authHeader, API_BASE, getToken, getUser } from '../../../src/utils/auth';
+import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
@@ -91,6 +92,8 @@ export default function Bills() {
   const [accessionSearching, setAccessionSearching] = useState(false);
   const [filter, setFilter]     = useState('all');
   const [stage, setStage]       = useState('');   // test stage — same list as Sample / Test Details
+  const [testPick, setTestPick] = useState('');   // "t:<id>" or "p:<id>" — see components/TestFilter
+  const testOptions             = useTestOptions();
 
   // Detail modal
   const [sel, setSel]           = useState<Bill | null>(null);
@@ -117,12 +120,13 @@ export default function Bills() {
       const qs = new URLSearchParams();
       if (filter !== 'all') qs.set('status', filter);
       if (stage) qs.set('stage', stage);
+      Object.entries(splitTestFilter(testPick)).forEach(([k, v]) => qs.set(k, v));
       const res  = await fetch(`${API_BASE}/api/billing/bills${qs.toString() ? `?${qs.toString()}` : ''}`, { headers: authHeader() });
       const data = await res.json();
       setBills(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filter, stage]);
+  }, [filter, stage, testPick]);
 
   useEffect(() => { setLoading(true); fetchBills(); }, [fetchBills]);
   const onRefresh = async () => { setRefreshing(true); await fetchBills(); setRefreshing(false); };
@@ -461,6 +465,11 @@ export default function Bills() {
             <Text style={[styles.filterText, stage === s && { color: '#fff' }]}>{s || 'all'}</Text>
           </TouchableOpacity>
         ))}
+      </View>
+      <View style={[styles.filterRow, { paddingTop: 0 }]}>
+        <View style={{ flex: 1 }}>
+          <TestFilter value={testPick} onChange={setTestPick} options={testOptions} />
+        </View>
       </View>
       <Text style={styles.count}>{filtered.length} bill{filtered.length !== 1 ? 's' : ''}</Text>
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (

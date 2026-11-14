@@ -1,4 +1,5 @@
 import { authHeader, API_BASE, getToken } from '../../../src/utils/auth';
+import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -55,6 +56,8 @@ export default function SampleReport() {
   const [barcode, setBarcode]   = useState('');
   const [patientName, setPatientName] = useState('');
   const [status, setStatus]     = useState('');
+  const [testPick, setTestPick] = useState('');   // "t:<id>" or "p:<id>" — see components/TestFilter
+  const testOptions             = useTestOptions();
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [franchises, setFranchises] = useState<{id:number;name:string}[]>([]);
   const [franchiseId, setFranchiseId] = useState<number | null>(null);
@@ -118,6 +121,7 @@ export default function SampleReport() {
       if (franchiseId)       params.set('franchise_id', String(franchiseId));
       if (fromDate.trim())   params.set('date_from', fromDate.trim());
       if (toDate.trim())     params.set('date_to', toDate.trim());
+      Object.entries(splitTestFilter(testPick)).forEach(([k, v]) => params.set(k, v));
       const res  = await fetch(`${API_BASE}/api/reports2/sample-details?${params.toString()}`, { headers: authHeader() });
       const json = await res.json();
       const list = json.rows ?? (Array.isArray(json) ? json : []);
@@ -128,7 +132,7 @@ export default function SampleReport() {
       setKpis({ patients: list.length, billed, collected, balance: billed - collected });
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [barcode, patientName, status, franchiseId, fromDate, toDate]);
+  }, [barcode, patientName, status, franchiseId, fromDate, toDate, testPick]);
 
   useEffect(() => {
     setLoading(true);
@@ -196,14 +200,19 @@ export default function SampleReport() {
             <Text style={{ color: toDate ? '#0F172A' : '#475569', fontSize: 12 }}>{toDate || 'To date'}</Text>
           </TouchableOpacity>
         </View>
+        <View style={styles.filterBar}>
+          <View style={{ flex: 1 }}>
+            <TestFilter value={testPick} onChange={setTestPick} options={testOptions} />
+          </View>
+        </View>
         <TouchableOpacity style={styles.applyBtnFull} onPress={applyFilters}>
           <Text style={styles.applyBtnText}>Apply Filters</Text>
         </TouchableOpacity>
 
         {/* Clear filters */}
-        {(fromDate || toDate || franchiseId || status || barcode || patientName) ? (
+        {(fromDate || toDate || franchiseId || status || barcode || patientName || testPick) ? (
           <TouchableOpacity style={styles.clearBtn} onPress={() => {
-            setFromDate(''); setToDate(''); setFranchiseId(null); setStatus(''); setBarcode(''); setPatientName('');
+            setFromDate(''); setToDate(''); setFranchiseId(null); setStatus(''); setBarcode(''); setPatientName(''); setTestPick('');
             setTimeout(applyFilters, 100);
           }}>
             <Text style={styles.clearBtnText}>Clear all filters</Text>
