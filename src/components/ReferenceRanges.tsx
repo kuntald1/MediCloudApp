@@ -71,7 +71,7 @@ export default function ReferenceRanges({ tests, testId, setTestId, search, setS
   // parameters it reports — i.e. exactly what a report of that test will use.
   const [showFilterPicker, setShowFilterPicker] = useState(false);
   const [usage, setUsage]     = useState<{ id: number; declared: { name: string; parameter_id?: number | null }[] }[]>([]);
-  const [plist, setPlist]     = useState<{ id: number; name: string; aliases?: string | null }[]>([]);
+  const [plist, setPlist]     = useState<{ id: number; name: string; aliases?: string | null; sort_order?: number | null }[]>([]);
 
   const load = useCallback(() => {
     fetch(`${API_BASE}/api/catalog/reference-ranges`, { headers: authHeader() })
@@ -142,7 +142,17 @@ export default function ReferenceRanges({ tests, testId, setTestId, search, setS
   const shown = rows.filter(inPickedTest).filter(r => !q
     || (r.param || '').toLowerCase().includes(q)
     || (testName(r.test_id) || '').toLowerCase().includes(q));
-  const byParam = (a: Range, b: Range) =>
+  // Within a block, parameters follow the report's own order (the Parameter
+  // list's "Order"); ones the list doesn't know come after, A-Z.
+  const posOf = new Map<string, number>();
+  plist.forEach(x => {
+    if (x.sort_order == null) return;
+    [x.name, ...String(x.aliases || '').split(/[,;]/)].forEach(n => {
+      const k = pkey(n); if (k && !posOf.has(k)) posOf.set(k, x.sort_order as number);
+    });
+  });
+  const posRow = (r: Range) => posOf.has(pkey(r.param)) ? (posOf.get(pkey(r.param)) as number) : 1e9;
+  const byParam = (a: Range, b: Range) => posRow(a) - posRow(b) ||
     (a.param || '').toUpperCase().localeCompare((b.param || '').toUpperCase()) || (a.id - b.id);
   const groups: { key: string; common: boolean; title: string; rows: Range[] }[] = [];
   const commonRows = shown.filter(r => r.test_id == null).sort(byParam);
