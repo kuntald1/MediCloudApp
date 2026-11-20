@@ -1,6 +1,6 @@
 import { authHeader, API_BASE, getToken } from '../../../src/utils/auth';
 import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
-import DepartmentFilter, { useDepartments } from '../../components/DepartmentFilter';
+import DepartmentFilter, { useDepartments, todayStr } from '../../components/DepartmentFilter';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -65,8 +65,8 @@ export default function SampleReport() {
   const [franchises, setFranchises] = useState<{id:number;name:string}[]>([]);
   const [franchiseId, setFranchiseId] = useState<number | null>(null);
   const [showFranchisePicker, setShowFranchisePicker] = useState(false);
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate]     = useState('');
+  const [fromDate, setFromDate] = useState(todayStr());   // opens on today's samples
+  const [toDate, setToDate]     = useState(todayStr());
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker]     = useState(false);
 
@@ -165,6 +165,7 @@ export default function SampleReport() {
         <Text style={styles.name}>{r.patient_name}</Text>
         <Text style={styles.meta}>👤 {r.age}y / {r.gender}  ·  🩺 {r.referring_doctor ?? '—'}</Text>
         <Text style={styles.meta}>🏢 {r.franchise} · {r.branch}</Text>
+        {(() => { const ds = Array.from(new Set((r.tests ?? []).map((t: any) => t.department).filter(Boolean))); return ds.length ? <Text style={[styles.meta, { color: '#0E7490' }]}>🧬 {ds.join(', ')}</Text> : null; })()}
         {!!r.collected_by && <Text style={[styles.meta, { color: '#0D9488' }]}>🧑‍🔬 {r.collected_by}</Text>}
         <View style={styles.amtRow}>
           <Text style={styles.amtItem}>Billed <Text style={styles.amtVal}>{inr(r.billed)}</Text></Text>
@@ -217,9 +218,9 @@ export default function SampleReport() {
         </TouchableOpacity>
 
         {/* Clear filters */}
-        {(fromDate || toDate || franchiseId || status || barcode || patientName || testPick || deptPick) ? (
+        {(fromDate !== todayStr() || toDate !== todayStr() || franchiseId || status || barcode || patientName || testPick || deptPick) ? (
           <TouchableOpacity style={styles.clearBtn} onPress={() => {
-            setFromDate(''); setToDate(''); setFranchiseId(null); setStatus(''); setBarcode(''); setPatientName(''); setTestPick(''); setDeptPick('');
+            setFromDate(todayStr()); setToDate(todayStr()); setFranchiseId(null); setStatus(''); setBarcode(''); setPatientName(''); setTestPick(''); setDeptPick('');
             setTimeout(applyFilters, 100);
           }}>
             <Text style={styles.clearBtnText}>Clear all filters</Text>

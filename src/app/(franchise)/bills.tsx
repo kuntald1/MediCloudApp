@@ -5,7 +5,7 @@ import * as Print from 'expo-print';
 import bwipjs from '@bwip-js/react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
-import DepartmentFilter, { useDepartments, billTests, BILL_TEST_STATUS_LABEL, BILL_TEST_STATUS_COLOR } from '../../components/DepartmentFilter';
+import DepartmentFilter, { useDepartments, todayStr, billTests, BILL_TEST_STATUS_LABEL, BILL_TEST_STATUS_COLOR } from '../../components/DepartmentFilter';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, Modal, ScrollView, Alert, Switch, Platform,
@@ -94,8 +94,8 @@ export default function FranchiseBills() {
   const [orgId, setOrgId]           = useState<number | null>(null);
   const [barcode, setBarcode]       = useState('');
   const [patientName, setPatientName] = useState('');
-  const [fromDate, setFromDate]     = useState('');
-  const [toDate, setToDate]         = useState('');
+  const [fromDate, setFromDate]     = useState(todayStr());   // opens on today's bills
+  const [toDate, setToDate]         = useState(todayStr());
   const [showFilters, setShowFilters] = useState(false);
   const [accessionQuery, setAccessionQuery] = useState('');
   const [accessionSearching, setAccessionSearching] = useState(false);
@@ -138,13 +138,13 @@ export default function FranchiseBills() {
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useEffect(() => { fetchOrgs(); fetchBills(); }, []); // eslint-disable-line
+  useEffect(() => { fetchOrgs(); fetchBills(null, '', fromDate, toDate, ''); }, []); // eslint-disable-line
 
   const onRefresh = () => { setRefreshing(true); fetchBills(orgId, barcode, fromDate, toDate, patientName); };
   const applyFilters = () => { setLoading(true); fetchBills(orgId, barcode, fromDate, toDate, patientName); };
   const clearFilters = () => {
-    setOrgId(null); setBarcode(''); setPatientName(''); setFromDate(''); setToDate('');
-    setLoading(true); fetchBills();
+    setOrgId(null); setBarcode(''); setPatientName(''); setFromDate(todayStr()); setToDate(todayStr());
+    setLoading(true); fetchBills(null, '', todayStr(), todayStr(), '');
   };
   const activeFilterCount = [orgId != null, !!barcode.trim(), !!patientName.trim(), !!fromDate, !!toDate].filter(Boolean).length;
 
@@ -303,7 +303,7 @@ export default function FranchiseBills() {
               const tc = BILL_TEST_STATUS_COLOR[t.status] ?? '#94A3B8';
               return (
                 <View key={t.key} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={{ flex: 1, color: '#334155', fontSize: 12, fontWeight: '600' }} numberOfLines={1}>{t.name}</Text>
+                  <Text style={{ flex: 1, color: '#334155', fontSize: 12, fontWeight: '600' }} numberOfLines={1}>{t.name}{t.department ? <Text style={{ color: '#0E7490', fontWeight: '700' }}>{`  · ${t.department}`}</Text> : null}</Text>
                   <Text style={{ color: tc, borderColor: tc, borderWidth: 1, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 1, fontSize: 10, fontWeight: '700' }}>● {BILL_TEST_STATUS_LABEL[t.status] ?? t.status}</Text>
                 </View>
               );

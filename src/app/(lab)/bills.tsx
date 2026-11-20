@@ -1,6 +1,6 @@
 import { authHeader, API_BASE, getToken, getUser } from '../../../src/utils/auth';
 import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
-import DepartmentFilter, { useDepartments, billTests, BILL_TEST_STATUS_LABEL, BILL_TEST_STATUS_COLOR } from '../../components/DepartmentFilter';
+import DepartmentFilter, { useDepartments, todayStr, billTests, BILL_TEST_STATUS_LABEL, BILL_TEST_STATUS_COLOR } from '../../components/DepartmentFilter';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
@@ -99,6 +99,8 @@ export default function Bills() {
   const [testPick, setTestPick] = useState('');   // "t:<id>" or "p:<id>" — see components/TestFilter
   const testOptions             = useTestOptions();
   const [deptPick, setDeptPick]   = useState('');   // department id
+  const [fromDate, setFromDate]   = useState(todayStr());   // opens on today's bills
+  const [toDate, setToDate]       = useState(todayStr());
   const depts                   = useDepartments();
 
   // Detail modal
@@ -128,12 +130,14 @@ export default function Bills() {
       if (stage) qs.set('stage', stage);
       Object.entries(splitTestFilter(testPick)).forEach(([k, v]) => qs.set(k, v));
       if (deptPick) qs.set('department_id', deptPick);
+      if (fromDate.trim()) qs.set('date_from', fromDate.trim());
+      if (toDate.trim())   qs.set('date_to', toDate.trim());
       const res  = await fetch(`${API_BASE}/api/billing/bills${qs.toString() ? `?${qs.toString()}` : ''}`, { headers: authHeader() });
       const data = await res.json();
       setBills(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filter, stage, testPick, deptPick]);
+  }, [filter, stage, testPick, deptPick, fromDate, toDate]);
 
   useEffect(() => { setLoading(true); fetchBills(); }, [fetchBills]);
   const onRefresh = async () => { setRefreshing(true); await fetchBills(); setRefreshing(false); };
@@ -422,7 +426,7 @@ export default function Bills() {
               const tc = BILL_TEST_STATUS_COLOR[t.status] ?? '#94A3B8';
               return (
                 <View key={t.key} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={{ flex: 1, color: '#334155', fontSize: 12, fontWeight: '600' }} numberOfLines={1}>{t.name}</Text>
+                  <Text style={{ flex: 1, color: '#334155', fontSize: 12, fontWeight: '600' }} numberOfLines={1}>{t.name}{t.department ? <Text style={{ color: '#0E7490', fontWeight: '700' }}>{`  · ${t.department}`}</Text> : null}</Text>
                   <Text style={{ color: tc, borderColor: tc, borderWidth: 1, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 1, fontSize: 10, fontWeight: '700' }}>● {BILL_TEST_STATUS_LABEL[t.status] ?? t.status}</Text>
                 </View>
               );
@@ -494,6 +498,14 @@ export default function Bills() {
       </View>
       <View style={[styles.filterRow, { paddingTop: 0 }]}>
         <DepartmentFilter value={deptPick} onChange={setDeptPick} depts={depts} />
+      </View>
+      <View style={[styles.filterRow, { paddingTop: 0, alignItems: 'center' }]}>
+        <Text style={styles.stageLabel}>From</Text>
+        <TextInput style={[styles.filterBtn, { flex: 1, color: '#0F172A', fontSize: 12, paddingVertical: 6 }]} value={fromDate} onChangeText={setFromDate}
+          placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
+        <Text style={styles.stageLabel}>To</Text>
+        <TextInput style={[styles.filterBtn, { flex: 1, color: '#0F172A', fontSize: 12, paddingVertical: 6 }]} value={toDate} onChangeText={setToDate}
+          placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
       </View>
       <Text style={styles.count}>{filtered.length} bill{filtered.length !== 1 ? 's' : ''}</Text>
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (

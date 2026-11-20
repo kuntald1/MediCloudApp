@@ -1,8 +1,9 @@
 import { authHeader, API_BASE } from '../../../src/utils/auth';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, FlatList } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { scanBridge } from '../../scanBridge';
+import DepartmentFilter, { useDepartments, todayStr } from '../../components/DepartmentFilter';
 
 const STATUS_FLOW = [
   { key: 'collected',  label: '🧪 Collected',  color: '#3B82F6' },
@@ -25,6 +26,12 @@ export default function ChangeStatus() {
   // ── Search mode state
   const [barcode, setBarcode]     = useState('');
   const [accession, setAccession] = useState('');
+  const [fromDate, setFromDate]   = useState(todayStr());   // opens on today's samples
+  const [toDate, setToDate]       = useState(todayStr());
+  const [orgPick, setOrgPick]     = useState('');
+  const [deptPick, setDeptPick]   = useState('');
+  const [orgs, setOrgs]           = useState<{ id: number; name: string }[]>([]);
+  const depts                     = useDepartments();
   const [results, setResults]     = useState<any[]>([]);
   const [selected, setSelected]   = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -55,10 +62,13 @@ export default function ChangeStatus() {
   );
 
   const searchSamples = async () => {
-    if (!barcode.trim() && !accession.trim()) return;
     setSearching(true); setResults([]); setSelected([]);
     try {
       const params = new URLSearchParams();
+      if (fromDate.trim())   params.set('date_from', fromDate.trim());
+      if (toDate.trim())     params.set('date_to', toDate.trim());
+      if (orgPick)           params.set('organization_id', orgPick);
+      if (deptPick)          params.set('department_id', deptPick);
       if (barcode.trim())    params.set('barcode', barcode.trim());
       if (accession.trim())  params.set('accession_number', accession.trim());
       const res  = await fetch(`${API_BASE}/api/sample-status/search?${params.toString()}`, { headers: authHeader() });
@@ -67,6 +77,14 @@ export default function ChangeStatus() {
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setSearching(false); }
   };
+
+  // opens on today's samples, like Results / Bills
+  useEffect(() => {
+    searchSamples();
+    fetch(`${API_BASE}/api/b2b/organizations`, { headers: authHeader() })
+      .then(r => (r.ok ? r.json() : [])).catch(() => [])
+      .then((d: any) => setOrgs(Array.isArray(d) ? d : []));
+  }, []); // eslint-disable-line
 
   const toggleSelect = (id: number) =>
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -167,6 +185,27 @@ export default function ChangeStatus() {
         <>
           {/* Search fields */}
           <View style={styles.searchFieldsCard}>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>From</Text>
+                <TextInput style={styles.fieldInput} value={fromDate} onChangeText={setFromDate}
+                  placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>To</Text>
+                <TextInput style={styles.fieldInput} value={toDate} onChangeText={setToDate}
+                  placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
+              </View>
+            </View>
+            {orgs.length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <DepartmentFilter label="Organization" value={orgPick} onChange={setOrgPick} depts={orgs} />
+              </View>
+            )}
+            <View style={{ marginBottom: 12 }}>
+              <DepartmentFilter value={deptPick} onChange={setDeptPick} depts={depts} />
+            </View>
+
             <Text style={styles.fieldLabel}>Barcode</Text>
             <TextInput style={styles.fieldInput} value={barcode} onChangeText={setBarcode}
               placeholder="e.g. HC58922" placeholderTextColor="#94A3B8"
@@ -220,6 +259,7 @@ export default function ChangeStatus() {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.patName}>{r.patient_name}{r.test_name ? ` · ${r.test_name}` : ''}</Text>
                         <Text style={styles.barcode}>{r.barcode}{r.accession_number ? ` · ${r.accession_number}` : ''}{r.package_name ? ` · ${r.package_name}` : ''}</Text>
+                        {!!r.department && <Text style={[styles.barcode, { color: '#0E7490', fontWeight: '700' }]}>🧬 {r.department}</Text>}
                       </View>
                       <View style={[styles.badge, { borderColor: color }]}>
                         <Text style={[styles.badgeText, { color }]}>{statusLabel(r.status)}</Text>
@@ -231,7 +271,7 @@ export default function ChangeStatus() {
               ListEmptyComponent={
                 <View style={styles.empty}>
                   <Text style={styles.emptyIcon}>🔍</Text>
-                  <Text style={styles.emptyText}>Search a barcode or accession no. to begin</Text>
+                  <Text style={styles.emptyText}>No samples match these filters</Text>
                 </View>
               }
             />

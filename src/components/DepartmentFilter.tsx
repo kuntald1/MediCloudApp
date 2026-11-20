@@ -8,6 +8,12 @@ import { API_BASE, authHeader } from '../utils/auth';
 
 export type Dept = { id: number; name: string };
 
+/** Today as YYYY-MM-DD in the device's local time — the default From / To of every list. */
+export function todayStr() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 export function useDepartments() {
   const [depts, setDepts] = useState<Dept[]>([]);
   useEffect(() => {
@@ -54,13 +60,13 @@ export const BILL_TEST_STATUS_COLOR: Record<string, string> = {
   validated: '#16A34A', reported: '#7C3AED', sample_rejected: '#DC2626',
 };
 export function billTests(items?: any[]) {
-  const out: { key: string; name: string; status: string }[] = [];
+  const out: { key: string; name: string; status: string; department: string }[] = [];
   const seen = new Set<string>();
   (items || []).forEach((i: any) => {
     const key = i.package_id ? `p${i.package_id}` : `i${i.id}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ key, name: i.package_id ? (i.package_name || i.test_name) : i.test_name, status: i.status || 'collected' });
+    out.push({ key, name: i.package_id ? (i.package_name || i.test_name) : i.test_name, status: i.status || 'collected', department: i.department_name || '' });
   });
   return out;
 }
