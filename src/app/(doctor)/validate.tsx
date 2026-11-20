@@ -10,7 +10,7 @@ import {
 interface PendingReport {
   id: number; barcode: string; patient_name: string; age?: number | null; gender?: string;
   status: string; needs_history: boolean; assigned_doctor_id?: number | null;
-  organization_id?: number | null; created_at: string; accession_numbers?: string[];
+  organization_id?: number | null; created_at: string; accession_numbers?: string[]; test_names?: string[];
 }
 interface Param { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; param?: string; calculated?: boolean; flag_manual?: boolean; added?: boolean; }
 interface ResultItem { id: number; test_name: string; status: string; created_at: string; accession_number?: string; note?: string | null; parsed_data?: { protocol?: string; parameters?: Param[] }; }
@@ -263,6 +263,7 @@ export default function ReportValidate() {
         <View style={styles.statusBadge}><Text style={styles.statusText}>{item.status}</Text></View>
       </View>
       <Text style={styles.patientName}>{item.patient_name}</Text>
+      {!!item.test_names?.length && <Text style={[styles.meta, { color: '#334155', fontWeight: '600' }]}>🧪 {item.test_names.join(', ')}</Text>}
       <Text style={styles.meta}>{item.age ?? '—'} / {item.gender ?? '—'}  ·  Registered {fmtDate(item.created_at)}</Text>
       {item.needs_history && <Text style={styles.historyFlag}>📜 History requested</Text>}
       <TouchableOpacity style={styles.reviewBtn} onPress={() => openReview(item.id)}>
