@@ -11,7 +11,7 @@ import {
 interface Param  { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; }
 interface Result {
   id: number; barcode: string; patient_name: string;
-  test_name?: string; status: string; lifecycle_status?: string;
+  test_name?: string; billed_test_name?: string | null; test_status?: string | null; status: string; lifecycle_status?: string;
   created_at: string; device_name?: string; franchise?: string;
   over_limit?: boolean; locked?: boolean; accession_number?: string;
   parsed_data?: { parameters?: Param[]; protocol?: string } | null;
@@ -37,6 +37,18 @@ const STATUS_COLOR: Record<string, string> = {
   sample_rejected: '#EF4444', rejected: '#EF4444',
 };
 
+// The one status shown per test: where THAT test (its own accession) stands.
+const TEST_STATUS_LABEL: Record<string, string> = {
+  collected: 'Collected', dispatched: 'Dispatched', received: 'Received', tested: 'Tested',
+  validated: 'Validated', reported: 'Reported', outsource: 'Outsourced', sample_rejected: 'Rejected', rejected: 'Rejected',
+};
+const TEST_STATUS_COLOR: Record<string, string> = {
+  collected: '#0EA5E9', dispatched: '#6366F1', received: '#8B5CF6', tested: '#F59E0B',
+  validated: '#16A34A', reported: '#0F766E', outsource: '#7C3AED', sample_rejected: '#DC2626', rejected: '#DC2626',
+};
+const testStatusOf = (r: Result) => isOutsourced(r) ? 'outsource' : (r.test_status || r.lifecycle_status || r.status || 'collected');
+const initialsOf = (name?: string) => String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+
 const fmtDateTime = (iso?: string) => iso ? new Date(iso).toLocaleString('en-IN', {
   day: 'numeric', month: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
 }) : '';
@@ -59,6 +71,8 @@ export default function FranchiseResults() {
   // read-only endpoint (attachments-for); upload/delete is lab-staff only.
   const [attachmentsForDl, setAttachmentsForDl] = useState<Attachment[]>([]);
   const [attLoading, setAttLoading] = useState(false);
+
+  const [view, setView] = useState<any[] | null>(null);   // report-shaped panels for the selected patient
 
   const fetchResults = useCallback(async () => {
     try {
@@ -249,39 +263,70 @@ export default function FranchiseResults() {
 
   const activeFilterCount = [barcode, patientId, patientName].filter(s => s.trim()).length;
 
-  const renderItem = ({ item: r }: { item: Result }) => {
-    const life  = r.lifecycle_status ?? r.status;
-    const color = STATUS_COLOR[life] ?? '#64748B';
-    const statusColor = STATUS_COLOR[r.status] ?? '#64748B';
+  // One card per patient (barcode), listing every test that patient has; the several analyser
+  // transmissions of one test (same accession) share one test row.
+  const patientGroups = (() => {
+    const order: any[] = []; const byKey = new Map<string, any>();
+    results.forEach((r, i) => {
+      const key = r.barcode ? `${r.patient_name}|${r.barcode}` : `row-${i}`;
+      if (!byKey.has(key)) {
+        const g = { key, patient_name: r.patient_name, barcode: r.barcode, created_at: r.created_at, rows: [] as Result[], tests: new Map<string, any>() };
+        byKey.set(key, g); order.push(g);
+      }
+      const g = byKey.get(key);
+      g.rows.push(r);
+      if (new Date(r.created_at) > new Date(g.created_at)) g.created_at = r.created_at;
+      const tkey = r.accession_number || `r-${r.id ?? i}`;
+      if (!g.tests.has(tkey)) g.tests.set(tkey, { key: tkey, accession: r.accession_number, name: r.billed_test_name || r.test_name, status: testStatusOf(r), results: [] as Result[] });
+      g.tests.get(tkey).results.push(r);
+    });
+    return order.map(g => ({ ...g, tests: [...g.tests.values()] }));
+  })();
+
+  const siblingKey = sel ? results.filter(r => r.id != null && r.barcode === sel.barcode && !isOutsourced(r) && !r.locked).map(r => r.id).join(',') : '';
+  // The detail sheet shows what the printed report shows (merged per test, report order and names).
+  useEffect(() => {
+    setView(null);
+    if (!sel || sel.locked || isOutsourced(sel) || !siblingKey) return;
+    let live = true;
+    fetch(`${API_BASE}/api/results/report-view?ids=${siblingKey}`, { headers: authHeader() })
+      .then(r => r.ok ? r.json() : null).then(d => { if (live) setView(d && Array.isArray(d.panels) ? d.panels : null); }).catch(() => {});
+    return () => { live = false; };
+  }, [sel?.id, siblingKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const renderGroup = ({ item: g }: { item: any }) => {
+    const first = g.rows.find((r: Result) => !r.locked) || g.rows[0];
     return (
-      <TouchableOpacity style={styles.card} onPress={() => openDetail(r)} activeOpacity={0.8}>
-        <View style={styles.cardRow}>
-          <Text style={styles.name} numberOfLines={1}>{r.patient_name}</Text>
-          {r.locked && <Text style={styles.lock}>🔒</Text>}
-        </View>
-        <Text style={styles.testName}>
-          {r.test_name ?? '—'} <Text style={styles.barcodeInline}>· {r.barcode}{r.accession_number ? ` · ${r.accession_number}` : ''}</Text>
-        </Text>
-        <View style={styles.badgeRow}>
-          <View style={[styles.badge, { borderColor: color }]}>
-            <Text style={[styles.badgeText, { color }]}>{life}</Text>
+      <View style={styles.card}>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => openDetail(first)} style={styles.gHead}>
+          <View style={styles.avatar}><Text style={styles.avatarText}>{initialsOf(g.patient_name)}</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name} numberOfLines={1}>{g.patient_name}</Text>
+            <Text style={styles.gCode}>{g.barcode}</Text>
           </View>
-          <View style={[styles.badge, { borderColor: statusColor }]}>
-            <Text style={[styles.badgeText, { color: statusColor }]}>{r.status}</Text>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.gTime}>{fmtDateTime(g.created_at)}</Text>
+            <Text style={styles.gCount}>{g.tests.length} TEST{g.tests.length === 1 ? '' : 'S'}</Text>
           </View>
-          {isOutsourced(r) && (
-            <View style={[styles.badge, { borderColor: '#8B5CF6' }]}>
-              <Text style={[styles.badgeText, { color: '#8B5CF6' }]}>📤 OUTSOURCED</Text>
-            </View>
-          )}
-          {r.over_limit && (
-            <View style={[styles.badge, { borderColor: '#F59E0B' }]}>
-              <Text style={[styles.badgeText, { color: '#F59E0B' }]}>over limit</Text>
-            </View>
-          )}
-        </View>
-        <Text style={styles.date}>{fmtDateTime(r.created_at)}{r.device_name ? ` · ${r.device_name}` : ''}</Text>
-      </TouchableOpacity>
+        </TouchableOpacity>
+        {g.tests.map((t: any, ti: number) => {
+          const c = TEST_STATUS_COLOR[t.status] ?? '#94A3B8';
+          const tf = t.results.find((r: Result) => !r.locked) || t.results[0];
+          const locked = t.results.some((r: Result) => r.locked);
+          return (
+            <TouchableOpacity key={t.key} activeOpacity={0.7} onPress={() => openDetail(tf)}
+              style={[styles.tRow, ti > 0 && { borderTopWidth: 1, borderTopColor: '#F1F5F9' }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tName}>{t.name || 'Test'}{locked ? '  🔒' : ''}</Text>
+                {t.accession ? <Text style={styles.tAcc}>{t.accession}</Text> : null}
+              </View>
+              <View style={[styles.badge, { borderColor: c, backgroundColor: c + '14' }]}>
+                <Text style={[styles.badgeText, { color: c }]}>● {TEST_STATUS_LABEL[t.status] ?? t.status}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     );
   };
 
@@ -321,10 +366,10 @@ export default function FranchiseResults() {
         </View>
       </View>
 
-      {!loading && <Text style={styles.headerCount}>{results.length} result{results.length !== 1 ? 's' : ''} — tap to view details</Text>}
+      {!loading && <Text style={styles.headerCount}>{patientGroups.length} patient{patientGroups.length !== 1 ? 's' : ''} · {results.length} result{results.length !== 1 ? 's' : ''} — tap to view details</Text>}
 
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (
-        <FlatList data={results} keyExtractor={(r, i) => (r.id ?? i).toString()} renderItem={renderItem}
+        <FlatList data={patientGroups} keyExtractor={(g: any) => g.key} renderItem={renderGroup}
           contentContainerStyle={{ paddingBottom: 32 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17B9A1" />}
           ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyIcon}>📋</Text><Text style={styles.emptyText}>No results found</Text></View>}
@@ -372,7 +417,31 @@ export default function FranchiseResults() {
                       </View>
                     </View>
 
-                    <Text style={styles.paramTitle}>PARAMETERS ({sel.parsed_data?.parameters?.length ?? 0})</Text>
+                    <Text style={styles.paramTitle}>PARAMETERS ({view ? view.reduce((n: number, pn: any) => n + pn.parameters.length, 0) : (sel.parsed_data?.parameters?.length ?? 0)})</Text>
+                    {view && view.length > 0 && view.map((pn: any, pi: number) => (
+                      <View key={pn.accession || pi} style={{ marginBottom: 10 }}>
+                        <Text style={styles.panelTitle}>{pn.title}</Text>
+                        {pn.parameters.map((p: any, i: number) => {
+                          const flag = p.flag === 'H' || p.flag === 'L';
+                          const ref = p.ref_text ? String(p.ref_text) : ((p.ref_min != null && p.ref_min !== '') || (p.ref_max != null && p.ref_max !== '') ? `${p.ref_min ?? ''}–${p.ref_max ?? ''}` : '');
+                          return (
+                            <View key={i}>
+                              {p.heading ? <Text style={styles.panelHeading}>{p.heading}</Text> : null}
+                              <View style={styles.paramRow2}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.paramName2}>{p.name || p.param}</Text>
+                                  {ref ? <Text style={styles.paramRef2}>Ref: {ref}</Text> : null}
+                                </View>
+                                <Text style={[styles.paramValue, flag && { color: p.flag === 'H' ? '#EF4444' : '#2563EB', fontWeight: '800' }]}>
+                                  {p.value}{p.unit ? ` ${p.unit}` : ''}{flag ? (p.flag === 'H' ? ' ↑' : ' ↓') : ''}
+                                </Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ))}
+                    {!(view && view.length > 0) && (<>
                     {(sel.parsed_data?.parameters ?? []).map((p, i) => {
                       const flag = p.flag === 'H' || p.flag === 'L';
                       return (
@@ -387,6 +456,7 @@ export default function FranchiseResults() {
                         </View>
                       );
                     })}
+                    </>)}
 
                     {isOutsourced(sel) && (
                       <>
@@ -449,7 +519,21 @@ const styles = StyleSheet.create({
   clearBtn:       { paddingHorizontal: 16, justifyContent: 'center' },
   clearBtnText:   { color: '#EF4444', fontSize: 13, fontWeight: '600' },
   headerCount:    { color: '#64748B', fontSize: 12, marginHorizontal: 12, marginBottom: 8, marginTop: 4 },
-  card:           { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  card:           { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  gHead:          { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: '#FFFAF5', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  avatar:         { width: 38, height: 38, borderRadius: 11, backgroundColor: '#F97316', alignItems: 'center', justifyContent: 'center' },
+  avatarText:     { color: '#fff', fontWeight: '800', fontSize: 12 },
+  gCode:          { color: '#F97316', fontWeight: '700', fontSize: 12, marginTop: 1 },
+  gTime:          { color: '#94A3B8', fontSize: 10.5 },
+  gCount:         { color: '#475569', fontSize: 10, fontWeight: '800', marginTop: 2 },
+  tRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
+  tName:          { color: '#0F172A', fontSize: 13.5, fontWeight: '700' },
+  tAcc:           { color: '#C2410C', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  panelTitle:     { color: '#0F172A', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', borderBottomWidth: 2, borderBottomColor: '#0F172A', paddingBottom: 3, marginBottom: 2, marginTop: 6 },
+  panelHeading:   { color: '#0F172A', fontSize: 11.5, fontWeight: '800', textDecorationLine: 'underline', marginTop: 8, marginBottom: 2 },
+  paramRow2:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  paramName2:     { color: '#0F172A', fontSize: 13, fontWeight: '600' },
+  paramRef2:      { color: '#94A3B8', fontSize: 10.5, marginTop: 1 },
   cardRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   name:           { color: '#0F172A', fontSize: 15, fontWeight: 'bold', flex: 1 },
   lock:           { fontSize: 14, marginLeft: 6 },

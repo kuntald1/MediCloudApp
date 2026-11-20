@@ -1,6 +1,6 @@
 import { authHeader, API_BASE, getToken, getUser } from '../../../src/utils/auth';
 import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
-import ResultEditor from '../../components/ResultEditor';
+import MergedEditor from '../../components/MergedEditor';
 import { uploadPickedFile } from '../../../src/utils/uploadPickedFile';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -19,7 +19,7 @@ const orgLabel = (o: any) => (o.code && !String(o.name || '').toUpperCase().star
 interface Param  { name: string; value: number | string; unit?: string; ref_min?: number; ref_max?: number; flag?: string; param?: string; calculated?: boolean; flag_manual?: boolean; added?: boolean; }
 interface Result {
   id: number; barcode: string; patient_name: string;
-  test_name?: string; status: string; lifecycle_status?: string;
+  test_name?: string; billed_test_name?: string | null; test_status?: string | null; status: string; lifecycle_status?: string;
   created_at: string; device_name?: string; accession_number?: string;
   parsed_data?: { parameters?: Param[]; protocol?: string } | null;
   note?: string | null;
@@ -49,6 +49,18 @@ const STATUS_COLOR: Record<string, string> = {
   validated: '#A855F7', reported: '#10B981', completed: '#10B981',
   sample_rejected: '#EF4444', rejected: '#EF4444',
 };
+
+// The one status shown per test: where THAT test (its own accession) stands.
+const TEST_STATUS_LABEL: Record<string, string> = {
+  collected: 'Collected', dispatched: 'Dispatched', received: 'Received', tested: 'Tested',
+  validated: 'Validated', reported: 'Reported', outsource: 'Outsourced', sample_rejected: 'Rejected', rejected: 'Rejected',
+};
+const TEST_STATUS_COLOR: Record<string, string> = {
+  collected: '#0EA5E9', dispatched: '#6366F1', received: '#8B5CF6', tested: '#F59E0B',
+  validated: '#16A34A', reported: '#0F766E', outsource: '#7C3AED', sample_rejected: '#DC2626', rejected: '#DC2626',
+};
+const testStatusOf = (r: Result) => isOutsourced(r) ? 'outsource' : (r.test_status || r.lifecycle_status || r.status || 'collected');
+const initialsOf = (name?: string) => String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
 
 const FLAG_OPTIONS = [
   { label: 'Normal', value: '' },
@@ -120,6 +132,10 @@ export default function Results() {
         edited: data.parsed_data?.edited ?? r.edited } : r));
 
   const [editing, setEditing]     = useState(false);
+  const [editMerged, setEditMerged] = useState(false);   // editing the whole report-shaped list (MergedEditor)
+  const [view, setView]           = useState<any[] | null>(null);   // report-shaped panels for the selected patient
+  const [viewTick, setViewTick]   = useState(0);
+  const [editSearch, setEditSearch] = useState('');
   const [editParams, setEditParams] = useState<Param[]>([]);
   const [editNote, setEditNote]     = useState('');
   const [saving, setSaving]         = useState(false);
@@ -181,12 +197,67 @@ export default function Results() {
   useEffect(() => { setLoading(true); fetchResults(); }, [fetchResults]);
   const onRefresh = () => { setRefreshing(true); fetchResults(); };
 
+  // One card per patient (barcode), listing every test that patient has; the several analyser
+  // transmissions of one test (same accession) share one test row.
+  const patientGroups = (() => {
+    const order: any[] = []; const byKey = new Map<string, any>();
+    results.forEach((r, i) => {
+      const key = r.barcode ? `${r.patient_name}|${r.barcode}` : `row-${i}`;
+      if (!byKey.has(key)) {
+        const g = { key, patient_name: r.patient_name, barcode: r.barcode, created_at: r.created_at, rows: [] as Result[], tests: new Map<string, any>() };
+        byKey.set(key, g); order.push(g);
+      }
+      const g = byKey.get(key);
+      g.rows.push(r);
+      if (new Date(r.created_at) > new Date(g.created_at)) g.created_at = r.created_at;
+      const tkey = r.accession_number || `r-${r.id ?? i}`;
+      if (!g.tests.has(tkey)) g.tests.set(tkey, { key: tkey, accession: r.accession_number, name: r.billed_test_name || r.test_name, status: testStatusOf(r), results: [] as Result[] });
+      g.tests.get(tkey).results.push(r);
+    });
+    return order.map(g => ({ ...g, tests: [...g.tests.values()] }));
+  })();
+
+  // Edit All: the same patient cards, restricted to what can be edited, filtered by the search box
+  const editIds = new Set(editableResults.map(r => r.id));
+  const editGroups = patientGroups
+    .map((g: any) => ({ ...g, rows: g.rows.filter((r: Result) => editIds.has(r.id)),
+      tests: g.tests.map((t: any) => ({ ...t, results: t.results.filter((r: Result) => editIds.has(r.id)) })).filter((t: any) => t.results.length) }))
+    .filter((g: any) => g.rows.length)
+    .filter((g: any) => {
+      const q = editSearch.trim().toLowerCase();
+      if (!q) return true;
+      return String(g.patient_name || '').toLowerCase().includes(q) || String(g.barcode || '').toLowerCase().includes(q)
+        || g.rows.some((r: Result) => String(r.accession_number || '').toLowerCase().includes(q));
+    });
+
+  const siblingIds = sel ? results.filter(r => r.id != null && r.barcode === sel.barcode && !isOutsourced(r) && !(r as any).locked).map(r => r.id) : [];
+  const siblingKey = siblingIds.join(',');
+  // The detail sheet shows what the printed report shows (merged per test, report order and names).
+  // Falls back to the plain per-result list if this can't be loaded.
+  useEffect(() => {
+    setView(null);
+    if (!sel || (sel as any).locked || isOutsourced(sel) || !siblingKey) return;
+    let live = true;
+    fetch(`${API_BASE}/api/results/report-view?ids=${siblingKey}`, { headers: authHeader() })
+      .then(r => r.ok ? r.json() : null).then(d => { if (live) setView(d && Array.isArray(d.panels) ? d.panels : null); }).catch(() => {});
+    return () => { live = false; };
+  }, [sel?.id, siblingKey, sel?.parsed_data, viewTick]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const afterMergedSaved = (list: { id: number; updated: any }[]) => {
+    list.forEach(({ id, updated }) => {
+      afterRowSaved(id, updated);
+      if (sel && id === sel.id) setSel(prev => prev ? { ...prev, parsed_data: updated.parsed_data ?? prev.parsed_data, note: updated.note ?? prev.note } : prev);
+    });
+    setViewTick(t => t + 1);
+    setEditing(false); setEditMerged(false);
+  };
+
   const openDetail = (r: Result) => {
-    setSel(r); setEditing(false);
+    setSel(r); setEditing(false); setEditMerged(false);
     setAttachments([]); setAttachmentsForDl([]);
     if (isOutsourced(r)) fetchAttachmentsForResult(r.id);
   };
-  const closeDetail = () => { setSel(null); setEditing(false); };
+  const closeDetail = () => { setSel(null); setEditing(false); setEditMerged(false); };
 
   const fetchAttachmentsForResult = async (id: number) => {
     setAttLoading(true);
@@ -281,6 +352,7 @@ export default function Results() {
 
   const startEdit = () => {
     if (!sel) return;
+    if (view && view.length > 0) { setEditMerged(true); setEditing(true); return; }
     const base = (sel.parsed_data?.parameters ?? []).map(p => ({ ...p }));
     setEditParams(base);
     setEditNote(sel.note ?? '');
@@ -290,7 +362,7 @@ export default function Results() {
     loadMissing(base).then(extra =>
       setEditParams(prev => [...prev, ...extra.filter(e => !prev.some(p => p.name === e.name))]));
   };
-  const cancelEdit = () => setEditing(false);
+  const cancelEdit = () => { setEditing(false); setEditMerged(false); };
   const removeParam = (i: number) => {
     setEditParams(prev => prev.filter((_, idx) => idx !== i));
     setCalcDirty(true); setAddList(null);
@@ -445,35 +517,43 @@ export default function Results() {
     );
   };
 
-  const renderItem = ({ item: r }: { item: Result }) => {
-    const life  = r.lifecycle_status ?? r.status;
-    const color = STATUS_COLOR[life] ?? '#64748B';
+  const renderGroup = ({ item: g }: { item: any }) => {
+    const first = g.rows.find((r: Result) => !(r as any).locked) || g.rows[0];
+    const selIn = !!sel && g.rows.some((r: Result) => r.id === sel.id);
     return (
-      <TouchableOpacity style={styles.card} onPress={() => openDetail(r)} activeOpacity={0.8}>
-        <View style={styles.cardRow}>
-          <Text style={styles.barcode}>📋 {r.barcode}{r.accession_number ? <Text style={styles.accessionInline}> · {r.accession_number}</Text> : null}</Text>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            {isOutsourced(r) && (
-              <View style={[styles.badge, { borderColor: '#8B5CF6' }]}>
-                <Text style={[styles.badgeText, { color: '#8B5CF6' }]}>📤 OUTSOURCED</Text>
-              </View>
-            )}
-            {r.edited ? (
-              <View style={[styles.badge, { borderColor: '#7C3AED', backgroundColor: '#7C3AED14' }]}>
-                <Text style={[styles.badgeText, { color: '#7C3AED' }]}>✎ EDITED{(r.edited.count ?? 1) > 1 ? ` ×${r.edited.count}` : ''}</Text>
-              </View>
-            ) : null}
-            <View style={[styles.badge, { borderColor: color }]}>
-              <Text style={[styles.badgeText, { color }]}>● {life}</Text>
-            </View>
+      <View style={[styles.card, selIn && { borderColor: '#F9731666' }]}>
+        <TouchableOpacity activeOpacity={0.8} onPress={() => openDetail(first)} style={styles.gHead}>
+          <View style={styles.avatar}><Text style={styles.avatarText}>{initialsOf(g.patient_name)}</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name} numberOfLines={1}>{g.patient_name}</Text>
+            <Text style={styles.gCode}>{g.barcode}</Text>
           </View>
-        </View>
-        <Text style={styles.name}>{r.patient_name}</Text>
-        {r.test_name && <Text style={styles.testName}>🧪 {r.test_name}</Text>}
-        <Text style={styles.date}>🕐 {fmtDateTime(r.created_at)}{r.device_name ? ` · ${r.device_name}` : ''}</Text>
-        {r.edited ? <Text style={styles.editedLine}>✎ Edited{r.edited.by ? ` by ${r.edited.by}` : ''}{r.edited.at ? ` · ${fmtDateTime(r.edited.at)}` : ''}</Text> : null}
-        <Text style={styles.tapHint}>Tap for details ›</Text>
-      </TouchableOpacity>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.gTime}>{fmtDateTime(g.created_at)}</Text>
+            <Text style={styles.gCount}>{g.tests.length} TEST{g.tests.length === 1 ? '' : 'S'}</Text>
+          </View>
+        </TouchableOpacity>
+        {g.tests.map((t: any, ti: number) => {
+          const c = TEST_STATUS_COLOR[t.status] ?? '#94A3B8';
+          const tf = t.results.find((r: Result) => !(r as any).locked) || t.results[0];
+          const edited = t.results.find((r: Result) => r.edited)?.edited;
+          return (
+            <TouchableOpacity key={t.key} activeOpacity={0.7} onPress={() => openDetail(tf)}
+              style={[styles.tRow, ti > 0 && { borderTopWidth: 1, borderTopColor: '#F1F5F9' }, t.results.some((r: Result) => sel && r.id === sel.id) && { backgroundColor: '#FFFBF7' }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tName}>{t.name || 'Test'}</Text>
+                {t.accession ? <Text style={styles.tAcc}>{t.accession}</Text> : null}
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                {edited ? <View style={[styles.badge, { borderColor: '#7C3AED', backgroundColor: '#7C3AED14' }]}><Text style={[styles.badgeText, { color: '#7C3AED' }]}>✎ EDITED</Text></View> : null}
+                <View style={[styles.badge, { borderColor: c, backgroundColor: c + '14' }]}>
+                  <Text style={[styles.badgeText, { color: c }]}>● {TEST_STATUS_LABEL[t.status] ?? t.status}</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     );
   };
 
@@ -534,7 +614,7 @@ export default function Results() {
                 <TouchableOpacity
                   style={[styles.editAllBtn, editableResults.length === 0 && { opacity: 0.5 }]}
                   disabled={editableResults.length === 0}
-                  onPress={() => { setOpenRows({}); setEditAllOpen(true); }}>
+                  onPress={() => { setOpenRows({}); setEditSearch(''); setEditAllOpen(true); }}>
                   <Text style={styles.editAllText}>✎  Edit All ({editableResults.length})</Text>
                 </TouchableOpacity>
               </View>
@@ -589,7 +669,7 @@ export default function Results() {
         </View>
       </Modal>
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (
-        <FlatList data={results} keyExtractor={(r, i) => (r.id ?? i).toString()} renderItem={renderItem}
+        <FlatList data={patientGroups} keyExtractor={(g: any) => g.key} renderItem={renderGroup}
           contentContainerStyle={{ paddingBottom: 32 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17B9A1" />}
           ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyIcon}>📋</Text><Text style={styles.emptyText}>No results found</Text></View>}
@@ -619,7 +699,7 @@ export default function Results() {
                   </View>
                 </View>
 
-                <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
+                <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false} nestedScrollEnabled keyboardShouldPersistTaps="handled">
                   <View style={styles.infoGrid}>
                     <View style={styles.infoBox}>
                       <Text style={styles.infoLabel}>PATIENT</Text>
@@ -643,16 +723,45 @@ export default function Results() {
                     </View>
                   </View>
 
-                  <Text style={styles.paramTitle}>PARAMETERS ({(editing ? editParams : sel.parsed_data?.parameters ?? []).length})</Text>
+                  <Text style={styles.paramTitle}>PARAMETERS ({view && !(editing && !editMerged) ? view.reduce((n: number, pn: any) => n + pn.parameters.length, 0) : (editing ? editParams : sel.parsed_data?.parameters ?? []).length})</Text>
 
-                  {!editing && (sel.parsed_data?.parameters ?? []).length === 0 && (
+                  {editing && editMerged && (
+                    <MergedEditor ids={siblingIds} results={results} noteResultId={sel.id} maxHeight={300}
+                      onSaved={afterMergedSaved} onCancel={cancelEdit} />
+                  )}
+
+                  {!editing && view && view.length > 0 && view.map((pn: any, pi: number) => (
+                    <View key={pn.accession || pi} style={{ marginBottom: 10 }}>
+                      <Text style={styles.panelTitle}>{pn.title}</Text>
+                      {pn.parameters.map((p: any, i: number) => {
+                        const flag = p.flag === 'H' || p.flag === 'L';
+                        const ref = p.ref_text ? String(p.ref_text) : ((p.ref_min != null && p.ref_min !== '') || (p.ref_max != null && p.ref_max !== '') ? `${p.ref_min ?? ''}–${p.ref_max ?? ''}` : '');
+                        return (
+                          <View key={i}>
+                            {p.heading ? <Text style={styles.panelHeading}>{p.heading}</Text> : null}
+                            <TouchableOpacity style={styles.paramRow2} activeOpacity={canEditSel ? 0.6 : 1} onPress={() => { if (canEditSel) startEdit(); }}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.paramName2}>{p.name || p.param}</Text>
+                                {ref ? <Text style={styles.paramRef2}>Ref: {ref}</Text> : null}
+                              </View>
+                              <Text style={[styles.paramValue, flag && { color: p.flag === 'H' ? '#EF4444' : '#2563EB', fontWeight: '800' }]}>
+                                {p.value}{p.unit ? ` ${p.unit}` : ''}{flag ? (p.flag === 'H' ? ' ↑' : ' ↓') : ''}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
+
+                  {!editing && !(view && view.length > 0) && (sel.parsed_data?.parameters ?? []).length === 0 && (
                     <TouchableOpacity disabled={!canEditSel} onPress={startEdit}>
                       <Text style={{ color: '#94A3B8', fontSize: 12.5, paddingVertical: 14, textAlign: 'center' }}>
                         No parameters on this report.{canEditSel ? '  Tap to add them back →' : ''}
                       </Text>
                     </TouchableOpacity>
                   )}
-                  {!editing && (sel.parsed_data?.parameters ?? []).map((p, i) => {
+                  {!editing && !(view && view.length > 0) && (sel.parsed_data?.parameters ?? []).map((p, i) => {
                     const flag = p.flag === 'H' || p.flag === 'L';
                     return (
                       <TouchableOpacity key={i} style={styles.paramRow} activeOpacity={canEditSel ? 0.6 : 1}
@@ -668,7 +777,7 @@ export default function Results() {
                     );
                   })}
 
-                  {editing && (
+                  {editing && !editMerged && (
                   <View style={styles.calcRow}>
                     {calcDirty && <Text style={styles.calcHint}>Values changed — tap Calculate to refresh VLDL / ratios</Text>}
                     <TouchableOpacity style={[styles.calcBtn, calcDirty && styles.calcBtnOn]} onPress={calculate} disabled={calcBusy}>
@@ -677,7 +786,7 @@ export default function Results() {
                     </TouchableOpacity>
                   </View>
                   )}
-                  {editing && editParams.map((p, i) => (
+                  {editing && !editMerged && editParams.map((p, i) => (
                     <View key={i} style={styles.editParamRow}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                         <Text style={[styles.editParamName, { flex: 1 }]}>{p.name}{p.calculated ? <Text style={styles.calcTag}>  · calculated</Text> : null}{p.added ? <Text style={styles.calcTag}>  · enter manually</Text> : null}</Text>
@@ -697,7 +806,7 @@ export default function Results() {
                     </View>
                   ))}
 
-                  {editing && (
+                  {editing && !editMerged && (
                     <View style={{ marginTop: 8 }}>
                       <TouchableOpacity style={styles.addParamBtn} onPress={openAdd}>
                         <Text style={styles.addParamBtnText}>+ Add parameter</Text>
@@ -714,7 +823,7 @@ export default function Results() {
                     </View>
                   )}
 
-                  {editing && (
+                  {editing && !editMerged && (
                     <>
                       <Text style={styles.noteLabel}>NOTE (shown at the end of the report if filled in)</Text>
                       <TextInput style={styles.noteInput} value={editNote} onChangeText={setEditNote}
@@ -793,49 +902,67 @@ export default function Results() {
         </View>
       </Modal>
 
-      {/* Edit All — every result now listed, one collapsible block each, each
-          with its own Save. Several reports can share a barcode, so they are
-          listed one per report rather than one per barcode. */}
+      {/* Edit All — one block per PATIENT (barcode): name, barcode and every test with its own status;
+          open it to edit all that patient's tests together in report format. Each patient saves on its own. */}
       <Modal visible={editAllOpen} transparent animationType="slide" onRequestClose={() => setEditAllOpen(false)}>
-        <View style={styles.modalOverlay}>
+        <View style={styles.overlay}>
           <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalTitle}>Edit All</Text>
                 <Text style={styles.modalSub}>
-                  {editableResults.length} report(s){fromDate || toDate ? ` · ${fromDate || '…'} to ${toDate || '…'}` : ''} — each saves on its own
+                  {editGroups.length} patient(s) · {editableResults.length} result(s){fromDate || toDate ? ` · ${fromDate || '…'} to ${toDate || '…'}` : ''} — each patient saves on its own
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setEditAllOpen(false)} style={styles.closeX}>
                 <Text style={styles.closeXText}>✕</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={false}
+            <TextInput style={[styles.search, { marginBottom: 10 }]} value={editSearch} onChangeText={setEditSearch}
+              placeholder="🔍  Patient name, barcode or accession no." placeholderTextColor="#475569" autoCorrect={false} />
+            <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false} nestedScrollEnabled
               keyboardShouldPersistTaps="handled">
               {editableResults.length === 0 && (
                 <Text style={styles.editAllEmpty}>Nothing in this list can be edited.</Text>
               )}
-              {editableResults.map(r => (
-                <View key={r.id} style={styles.editAllCard}>
-                  <TouchableOpacity style={[styles.editAllHead, openRows[r.id] && styles.editAllHeadOn]}
-                    onPress={() => setOpenRows(o => ({ ...o, [r.id]: !o[r.id] }))}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.editAllName} numberOfLines={1}>
-                        {r.patient_name || '—'}  <Text style={styles.editAllCode}>{r.barcode || '—'}</Text>
-                      </Text>
-                      <Text style={styles.editAllMeta} numberOfLines={1}>
-                        {r.test_name || `Result #${r.id}`} · {r.accession_number || '—'} · {(r.parsed_data?.parameters ?? []).length} params
-                      </Text>
-                    </View>
-                    <Text style={styles.editAllChevron}>{openRows[r.id] ? '▲' : '▼'}</Text>
-                  </TouchableOpacity>
-                  {openRows[r.id] && (
-                    <View style={styles.editAllBody}>
-                      <ResultEditor result={r as any} onSaved={data => afterRowSaved(r.id, data)} />
-                    </View>
-                  )}
-                </View>
-              ))}
+              {editableResults.length > 0 && editGroups.length === 0 && (
+                <Text style={styles.editAllEmpty}>No patient matches "{editSearch}".</Text>
+              )}
+              {editGroups.map((g: any) => {
+                const open = !!openRows[g.key];
+                const anyEdited = g.rows.some((r: Result) => r.edited);
+                return (
+                  <View key={g.key} style={styles.editAllCard}>
+                    <TouchableOpacity style={[styles.editAllHead, open && styles.editAllHeadOn]}
+                      onPress={() => setOpenRows(o => ({ ...o, [g.key]: !o[g.key] }))}>
+                      <View style={styles.avatarSm}><Text style={styles.avatarText}>{initialsOf(g.patient_name)}</Text></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.editAllName} numberOfLines={1}>
+                          {g.patient_name || '—'}  <Text style={styles.editAllCode}>{g.barcode || '—'}</Text>
+                          {anyEdited ? <Text style={{ color: '#7C3AED', fontSize: 10, fontWeight: '800' }}>  ✎ EDITED</Text> : null}
+                        </Text>
+                        {g.tests.map((t: any) => {
+                          const c = TEST_STATUS_COLOR[t.status] ?? '#94A3B8';
+                          return (
+                            <Text key={t.key} style={styles.editAllMeta} numberOfLines={1}>
+                              {t.name}  <Text style={{ color: c, fontWeight: '800' }}>● {TEST_STATUS_LABEL[t.status] ?? t.status}</Text>
+                            </Text>
+                          );
+                        })}
+                      </View>
+                      <Text style={styles.editAllChevron}>{open ? '▲' : '▼'}</Text>
+                    </TouchableOpacity>
+                    {open && (
+                      <View style={styles.editAllBody}>
+                        <MergedEditor ids={g.rows.map((r: Result) => r.id)} results={results} noteResultId={g.rows[0].id}
+                          maxHeight={340}
+                          onSaved={list => list.forEach(({ id, updated }) => afterRowSaved(id, updated))}
+                          onCancel={() => setOpenRows(o => ({ ...o, [g.key]: false }))} />
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
               <View style={{ height: 8 }} />
             </ScrollView>
           </View>
@@ -880,13 +1007,28 @@ const styles = StyleSheet.create({
   pCancel:        { marginTop: 8, padding: 14, borderRadius: 10, backgroundColor: '#F8FAFC', alignItems: 'center' },
   pCancelText:    { color: '#EF4444', fontWeight: '700' },
   search:         { backgroundColor: '#FFFFFF', color: '#0F172A', padding: 12, borderRadius: 10, fontSize: 14, borderWidth: 1, borderColor: '#E2E8F0' },
-  card:           { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  card:           { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  gHead:          { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: '#FFFAF5', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  avatar:         { width: 38, height: 38, borderRadius: 11, backgroundColor: '#F97316', alignItems: 'center', justifyContent: 'center' },
+  avatarSm:       { width: 32, height: 32, borderRadius: 10, backgroundColor: '#F97316', alignItems: 'center', justifyContent: 'center' },
+  avatarText:     { color: '#fff', fontWeight: '800', fontSize: 12 },
+  gCode:          { color: '#F97316', fontWeight: '700', fontSize: 12, marginTop: 1 },
+  gTime:          { color: '#94A3B8', fontSize: 10.5 },
+  gCount:         { color: '#475569', fontSize: 10, fontWeight: '800', marginTop: 2 },
+  tRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
+  tName:          { color: '#0F172A', fontSize: 13.5, fontWeight: '700' },
+  tAcc:           { color: '#C2410C', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  panelTitle:     { color: '#0F172A', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', borderBottomWidth: 2, borderBottomColor: '#0F172A', paddingBottom: 3, marginBottom: 2, marginTop: 6 },
+  panelHeading:   { color: '#0F172A', fontSize: 11.5, fontWeight: '800', textDecorationLine: 'underline', marginTop: 8, marginBottom: 2 },
+  paramRow2:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  paramName2:     { color: '#0F172A', fontSize: 13, fontWeight: '600' },
+  paramRef2:      { color: '#94A3B8', fontSize: 10.5, marginTop: 1 },
   cardRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   barcode:        { color: '#64748B', fontSize: 12 },
   accessionInline:{ color: '#F97316', fontSize: 12, fontWeight: '700' },
   badge:          { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, borderWidth: 1 },
   badgeText:      { fontSize: 11, fontWeight: '700' },
-  name:           { color: '#0F172A', fontSize: 16, fontWeight: 'bold', marginBottom: 2 },
+  name:           { color: '#0F172A', fontSize: 15, fontWeight: 'bold' },
   testName:       { color: '#60A5FA', fontSize: 13, marginBottom: 4 },
   date:           { color: '#475569', fontSize: 11 },
   editedLine:     { color: '#7C3AED', fontSize: 11, fontWeight: '600', marginTop: 2 },
