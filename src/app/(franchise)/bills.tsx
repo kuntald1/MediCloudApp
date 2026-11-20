@@ -5,12 +5,13 @@ import * as Print from 'expo-print';
 import bwipjs from '@bwip-js/react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
+import DepartmentFilter, { useDepartments, billTests, BILL_TEST_STATUS_LABEL, BILL_TEST_STATUS_COLOR } from '../../components/DepartmentFilter';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, Modal, ScrollView, Alert, Switch, Platform,
 } from 'react-native';
 
-interface BillItem { test_id: number; test_name: string; mrp: number; price: number; price_source?: string; package_id?: number | null; package_name?: string | null; accession_number?: string | null; id?: number; }
+interface BillItem { test_id: number; test_name: string; mrp: number; price: number; price_source?: string; package_id?: number | null; package_name?: string | null; accession_number?: string | null; id?: number; status?: string; department_name?: string | null; }
 interface Bill {
   id: number; bill_no: string; patient_id: number; patient_name: string; barcode: string;
   phone: string | null; organization_id: number | null; organization_name: string | null;
@@ -295,6 +296,19 @@ export default function FranchiseBills() {
           <Text style={styles.collectedBy}>
             🧑‍🔬 {b.collected_by_name || '—'}{b.branch_name ? `  ·  ${b.branch_name}` : ''}
           </Text>
+        )}
+        {billTests(b.items).length > 0 && (
+          <View style={{ marginTop: 6, gap: 3 }}>
+            {billTests(b.items).map(t => {
+              const tc = BILL_TEST_STATUS_COLOR[t.status] ?? '#94A3B8';
+              return (
+                <View key={t.key} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={{ flex: 1, color: '#334155', fontSize: 12, fontWeight: '600' }} numberOfLines={1}>{t.name}</Text>
+                  <Text style={{ color: tc, borderColor: tc, borderWidth: 1, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 1, fontSize: 10, fontWeight: '700' }}>● {BILL_TEST_STATUS_LABEL[t.status] ?? t.status}</Text>
+                </View>
+              );
+            })}
+          </View>
         )}
         <View style={styles.amtRow}>
           <View><Text style={styles.amtLabel}>Total</Text><Text style={styles.amtVal}>{inr(b.total)}</Text></View>

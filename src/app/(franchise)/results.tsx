@@ -277,7 +277,7 @@ export default function FranchiseResults() {
       g.rows.push(r);
       if (new Date(r.created_at) > new Date(g.created_at)) g.created_at = r.created_at;
       const tkey = r.accession_number || `r-${r.id ?? i}`;
-      if (!g.tests.has(tkey)) g.tests.set(tkey, { key: tkey, accession: r.accession_number, name: r.billed_test_name || r.test_name, status: testStatusOf(r), results: [] as Result[] });
+      if (!g.tests.has(tkey)) g.tests.set(tkey, { key: tkey, accession: r.accession_number, name: r.billed_test_name || r.test_name, department: (r as any).department, status: testStatusOf(r), results: [] as Result[] });
       g.tests.get(tkey).results.push(r);
     });
     return order.map(g => ({ ...g, tests: [...g.tests.values()] }));
@@ -319,6 +319,7 @@ export default function FranchiseResults() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.tName}>{t.name || 'Test'}{locked ? '  🔒' : ''}</Text>
                 {t.accession ? <Text style={styles.tAcc}>{t.accession}</Text> : null}
+                {t.department ? <Text style={styles.tDept}>{t.department}</Text> : null}
               </View>
               <View style={[styles.badge, { borderColor: c, backgroundColor: c + '14' }]}>
                 <Text style={[styles.badgeText, { color: c }]}>● {TEST_STATUS_LABEL[t.status] ?? t.status}</Text>
@@ -529,6 +530,7 @@ const styles = StyleSheet.create({
   tRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
   tName:          { color: '#0F172A', fontSize: 13.5, fontWeight: '700' },
   tAcc:           { color: '#C2410C', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  tDept:          { color: '#0E7490', fontSize: 10.5, fontWeight: '700', marginTop: 2 },
   panelTitle:     { color: '#0F172A', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', borderBottomWidth: 2, borderBottomColor: '#0F172A', paddingBottom: 3, marginBottom: 2, marginTop: 6 },
   panelHeading:   { color: '#0F172A', fontSize: 11.5, fontWeight: '800', textDecorationLine: 'underline', marginTop: 8, marginBottom: 2 },
   paramRow2:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },

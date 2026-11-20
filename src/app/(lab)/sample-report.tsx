@@ -1,5 +1,6 @@
 import { authHeader, API_BASE, getToken } from '../../../src/utils/auth';
 import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
+import DepartmentFilter, { useDepartments } from '../../components/DepartmentFilter';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -58,6 +59,8 @@ export default function SampleReport() {
   const [status, setStatus]     = useState('');
   const [testPick, setTestPick] = useState('');   // "t:<id>" or "p:<id>" — see components/TestFilter
   const testOptions             = useTestOptions();
+  const [deptPick, setDeptPick]   = useState('');   // department id
+  const depts                   = useDepartments();
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [franchises, setFranchises] = useState<{id:number;name:string}[]>([]);
   const [franchiseId, setFranchiseId] = useState<number | null>(null);
@@ -122,6 +125,7 @@ export default function SampleReport() {
       if (fromDate.trim())   params.set('date_from', fromDate.trim());
       if (toDate.trim())     params.set('date_to', toDate.trim());
       Object.entries(splitTestFilter(testPick)).forEach(([k, v]) => params.set(k, v));
+      if (deptPick) params.set('department_id', deptPick);
       const res  = await fetch(`${API_BASE}/api/reports2/sample-details?${params.toString()}`, { headers: authHeader() });
       const json = await res.json();
       const list = json.rows ?? (Array.isArray(json) ? json : []);
@@ -132,7 +136,7 @@ export default function SampleReport() {
       setKpis({ patients: list.length, billed, collected, balance: billed - collected });
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [barcode, patientName, status, franchiseId, fromDate, toDate, testPick]);
+  }, [barcode, patientName, status, franchiseId, fromDate, toDate, testPick, deptPick]);
 
   useEffect(() => {
     setLoading(true);
@@ -205,14 +209,17 @@ export default function SampleReport() {
             <TestFilter value={testPick} onChange={setTestPick} options={testOptions} />
           </View>
         </View>
+        <View style={styles.filterBar}>
+          <DepartmentFilter value={deptPick} onChange={setDeptPick} depts={depts} />
+        </View>
         <TouchableOpacity style={styles.applyBtnFull} onPress={applyFilters}>
           <Text style={styles.applyBtnText}>Apply Filters</Text>
         </TouchableOpacity>
 
         {/* Clear filters */}
-        {(fromDate || toDate || franchiseId || status || barcode || patientName || testPick) ? (
+        {(fromDate || toDate || franchiseId || status || barcode || patientName || testPick || deptPick) ? (
           <TouchableOpacity style={styles.clearBtn} onPress={() => {
-            setFromDate(''); setToDate(''); setFranchiseId(null); setStatus(''); setBarcode(''); setPatientName(''); setTestPick('');
+            setFromDate(''); setToDate(''); setFranchiseId(null); setStatus(''); setBarcode(''); setPatientName(''); setTestPick(''); setDeptPick('');
             setTimeout(applyFilters, 100);
           }}>
             <Text style={styles.clearBtnText}>Clear all filters</Text>
@@ -364,7 +371,7 @@ export default function SampleReport() {
                             <View key={i} style={styles.groupMemberRow}>
                               <View style={{ flex: 1 }}>
                                 <Text style={styles.itemMain}>• {t.test_name}</Text>
-                                <Text style={styles.itemSub}>{t.doctor ?? 'No doctor'} · {t.bill_no ?? '—'}</Text>
+                                <Text style={styles.itemSub}>{t.doctor ?? 'No doctor'}{t.department ? ` · ${t.department}` : ''} · {t.bill_no ?? '—'}</Text>
                               </View>
                               {t.result_id ? (
                                 <TouchableOpacity style={styles.reportPdfBtn} onPress={() => downloadReport(t.result_id, t.test_name)} disabled={pdfLoading === t.result_id}>
@@ -384,7 +391,7 @@ export default function SampleReport() {
                       <View key={i} style={styles.detailItem}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.itemMain}>{t.test_name}</Text>
-                          <Text style={styles.itemSub}>{t.doctor ?? 'No doctor'} · {t.bill_no ?? '—'}</Text>
+                          <Text style={styles.itemSub}>{t.doctor ?? 'No doctor'}{t.department ? ` · ${t.department}` : ''} · {t.bill_no ?? '—'}</Text>
                         </View>
                         <View style={{ alignItems: 'flex-end' }}>
                           <Text style={styles.itemPrice}>{inr(t.price)}</Text>

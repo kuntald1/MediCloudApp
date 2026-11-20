@@ -330,7 +330,7 @@ export default function SampleReport() {
                             <View key={i} style={styles.groupMemberRow}>
                               <View style={{ flex: 1 }}>
                                 <Text style={styles.itemMain}>• {t.test_name}</Text>
-                                <Text style={styles.itemSub}>{t.doctor ?? 'No doctor'} · {t.bill_no ?? '—'}</Text>
+                                <Text style={styles.itemSub}>{t.doctor ?? 'No doctor'}{t.department ? ` · ${t.department}` : ''} · {t.bill_no ?? '—'}</Text>
                               </View>
                               {t.result_id ? (
                                 <TouchableOpacity style={styles.reportPdfBtn} onPress={() => downloadReport(t.result_id, t.test_name)} disabled={pdfLoading === t.result_id}>
@@ -350,7 +350,7 @@ export default function SampleReport() {
                       <View key={i} style={styles.detailItem}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.itemMain}>{t.test_name}</Text>
-                          <Text style={styles.itemSub}>{t.doctor ?? 'No doctor'} · {t.bill_no ?? '—'}</Text>
+                          <Text style={styles.itemSub}>{t.doctor ?? 'No doctor'}{t.department ? ` · ${t.department}` : ''} · {t.bill_no ?? '—'}</Text>
                         </View>
                         <View style={{ alignItems: 'flex-end' }}>
                           <Text style={styles.itemPrice}>{inr(t.price)}</Text>

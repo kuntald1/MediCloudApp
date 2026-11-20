@@ -1,5 +1,6 @@
 import { authHeader, API_BASE, getToken, getUser } from '../../../src/utils/auth';
 import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
+import DepartmentFilter, { useDepartments, billTests, BILL_TEST_STATUS_LABEL, BILL_TEST_STATUS_COLOR } from '../../components/DepartmentFilter';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
@@ -97,6 +98,8 @@ export default function Bills() {
   const [stage, setStage]       = useState('');   // test stage — same list as Sample / Test Details
   const [testPick, setTestPick] = useState('');   // "t:<id>" or "p:<id>" — see components/TestFilter
   const testOptions             = useTestOptions();
+  const [deptPick, setDeptPick]   = useState('');   // department id
+  const depts                   = useDepartments();
 
   // Detail modal
   const [sel, setSel]           = useState<Bill | null>(null);
@@ -124,12 +127,13 @@ export default function Bills() {
       if (filter !== 'all') qs.set('status', filter);
       if (stage) qs.set('stage', stage);
       Object.entries(splitTestFilter(testPick)).forEach(([k, v]) => qs.set(k, v));
+      if (deptPick) qs.set('department_id', deptPick);
       const res  = await fetch(`${API_BASE}/api/billing/bills${qs.toString() ? `?${qs.toString()}` : ''}`, { headers: authHeader() });
       const data = await res.json();
       setBills(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [filter, stage, testPick]);
+  }, [filter, stage, testPick, deptPick]);
 
   useEffect(() => { setLoading(true); fetchBills(); }, [fetchBills]);
   const onRefresh = async () => { setRefreshing(true); await fetchBills(); setRefreshing(false); };
@@ -412,6 +416,19 @@ export default function Bills() {
             🧑‍🔬 {b.collected_by_name || '—'}{b.branch_name ? `  ·  ${b.branch_name}` : ''}
           </Text>
         )}
+        {billTests(b.items).length > 0 && (
+          <View style={{ marginTop: 6, gap: 3 }}>
+            {billTests(b.items).map(t => {
+              const tc = BILL_TEST_STATUS_COLOR[t.status] ?? '#94A3B8';
+              return (
+                <View key={t.key} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={{ flex: 1, color: '#334155', fontSize: 12, fontWeight: '600' }} numberOfLines={1}>{t.name}</Text>
+                  <Text style={{ color: tc, borderColor: tc, borderWidth: 1, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 1, fontSize: 10, fontWeight: '700' }}>● {BILL_TEST_STATUS_LABEL[t.status] ?? t.status}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
         <View style={styles.amtRow}>
           <View><Text style={styles.amtLabel}>Total</Text><Text style={styles.amtVal}>{inr(b.total)}</Text></View>
           <View><Text style={styles.amtLabel}>Paid</Text><Text style={[styles.amtVal, { color: '#10B981' }]}>{inr(b.paid)}</Text></View>
@@ -474,6 +491,9 @@ export default function Bills() {
         <View style={{ flex: 1 }}>
           <TestFilter value={testPick} onChange={setTestPick} options={testOptions} />
         </View>
+      </View>
+      <View style={[styles.filterRow, { paddingTop: 0 }]}>
+        <DepartmentFilter value={deptPick} onChange={setDeptPick} depts={depts} />
       </View>
       <Text style={styles.count}>{filtered.length} bill{filtered.length !== 1 ? 's' : ''}</Text>
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (

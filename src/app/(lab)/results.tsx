@@ -1,5 +1,6 @@
 import { authHeader, API_BASE, getToken, getUser } from '../../../src/utils/auth';
 import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
+import DepartmentFilter, { useDepartments } from '../../components/DepartmentFilter';
 import MergedEditor from '../../components/MergedEditor';
 import { uploadPickedFile } from '../../../src/utils/uploadPickedFile';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -100,6 +101,8 @@ export default function Results() {
   const TODAY = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const [testPick, setTestPick]     = useState('');   // "t:<id>" or "p:<id>" — see components/TestFilter
   const testOptions                 = useTestOptions();
+  const [deptPick, setDeptPick]       = useState('');   // department id
+  const depts                       = useDepartments();
   const [fromDate, setFromDate]     = useState(TODAY);
   const [toDate, setToDate]         = useState(TODAY);
   const [stage, setStage]           = useState('');
@@ -150,6 +153,7 @@ export default function Results() {
     if (toDate)             qs.set('date_to', toDate);
     if (stage)              qs.set('stage', stage);
     Object.entries(splitTestFilter(testPick)).forEach(([k, v]) => qs.set(k, v));
+    if (deptPick) qs.set('department_id', deptPick);
     return qs;
   };
 
@@ -180,7 +184,7 @@ export default function Results() {
     setZipBusy(false);
   };
 
-  const activeFilters = [orgId, patientId.trim(), fromDate, toDate, stage, testPick].filter(Boolean).length;
+  const activeFilters = [orgId, patientId.trim(), fromDate, toDate, stage, testPick, deptPick].filter(Boolean).length;
   const clearFilters = () => { setOrgId(null); setPatientId(''); setFromDate(TODAY); setToDate(TODAY); setStage(''); setTestPick(''); };
 
   const fetchResults = useCallback(async () => {
@@ -192,7 +196,7 @@ export default function Results() {
       setResults(Array.isArray(data) ? data : data.items ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [search, patientName, orgId, patientId, fromDate, toDate, stage, testPick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, patientName, orgId, patientId, fromDate, toDate, stage, testPick, deptPick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { setLoading(true); fetchResults(); }, [fetchResults]);
   const onRefresh = () => { setRefreshing(true); fetchResults(); };
@@ -211,7 +215,7 @@ export default function Results() {
       g.rows.push(r);
       if (new Date(r.created_at) > new Date(g.created_at)) g.created_at = r.created_at;
       const tkey = r.accession_number || `r-${r.id ?? i}`;
-      if (!g.tests.has(tkey)) g.tests.set(tkey, { key: tkey, accession: r.accession_number, name: r.billed_test_name || r.test_name, status: testStatusOf(r), results: [] as Result[] });
+      if (!g.tests.has(tkey)) g.tests.set(tkey, { key: tkey, accession: r.accession_number, name: r.billed_test_name || r.test_name, department: (r as any).department, status: testStatusOf(r), results: [] as Result[] });
       g.tests.get(tkey).results.push(r);
     });
     return order.map(g => ({ ...g, tests: [...g.tests.values()] }));
@@ -543,6 +547,7 @@ export default function Results() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.tName}>{t.name || 'Test'}</Text>
                 {t.accession ? <Text style={styles.tAcc}>{t.accession}</Text> : null}
+                {t.department ? <Text style={styles.tDept}>{t.department}</Text> : null}
               </View>
               <View style={{ alignItems: 'flex-end', gap: 4 }}>
                 {edited ? <View style={[styles.badge, { borderColor: '#7C3AED', backgroundColor: '#7C3AED14' }]}><Text style={[styles.badgeText, { color: '#7C3AED' }]}>✎ EDITED</Text></View> : null}
@@ -598,6 +603,9 @@ export default function Results() {
               <View style={{ flex: 1 }}>
                 <TestFilter value={testPick} onChange={setTestPick} options={testOptions} />
               </View>
+            </View>
+            <View style={styles.fRow}>
+              <DepartmentFilter value={deptPick} onChange={setDeptPick} depts={depts} />
             </View>
             <View style={styles.fRow}>
               {activeFilters > 0 && (
@@ -1018,6 +1026,7 @@ const styles = StyleSheet.create({
   tRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
   tName:          { color: '#0F172A', fontSize: 13.5, fontWeight: '700' },
   tAcc:           { color: '#C2410C', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  tDept:          { color: '#0E7490', fontSize: 10.5, fontWeight: '700', marginTop: 2 },
   panelTitle:     { color: '#0F172A', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', borderBottomWidth: 2, borderBottomColor: '#0F172A', paddingBottom: 3, marginBottom: 2, marginTop: 6 },
   panelHeading:   { color: '#0F172A', fontSize: 11.5, fontWeight: '800', textDecorationLine: 'underline', marginTop: 8, marginBottom: 2 },
   paramRow2:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
