@@ -2,7 +2,7 @@ import { authHeader, API_BASE, getToken } from '../../../src/utils/auth';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
-import { labelSubLine } from '../../components/labelText';
+import { ageSexText } from '../../components/labelText';
 import bwipjs from '@bwip-js/react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -25,7 +25,7 @@ interface Org { id: number; name: string; }
 
 // ── Sample-label printing (same client-side pattern as New Bill: barcode PNG
 // via @bwip-js/react-native embedded as a static <img>, handed to expo-print).
-interface LabelItem { patientName: string; testName: string; accession: string; }
+interface LabelItem { patientName: string; testName: string; accession: string; ageSex?: string; }
 
 async function renderBarcodeDataUri(text: string): Promise<string> {
   const result = await bwipjs.toDataURL({ bcid: 'code128', text, scale: 3, height: 10, includetext: false });
@@ -39,6 +39,7 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
   const labelBlocks = withBarcodes.map((it) => `
     <div class="label">
       <div class="test">${escapeHtml(it.testName)}</div>
+      <div class="agesex">${escapeHtml(it.ageSex ?? '')}</div>
       <img class="barcode" src="${it.barcodeUri}" />
       <div class="code">${escapeHtml(it.accession)}</div>
     </div>
@@ -56,7 +57,8 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
           break-inside: avoid; page-break-inside: avoid;
         }
         .patient { font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
-        .test { font-size: 13px; font-weight: 600; color: #0F172A; margin-bottom: 8px; }
+        .test { font-size: 12px; font-weight: 600; color: #0F172A; margin-bottom: 1px; }
+        .agesex { font-size: 12px; color: #334155; margin-bottom: 8px; }
         .barcode { display: block; margin: 0 auto; max-width: 90%; }
         .code { font-size: 12px; font-weight: 800; color: #0F172A; margin-top: 4px; letter-spacing: 0.5px; }
       </style>
@@ -251,7 +253,7 @@ export default function FranchiseBills() {
     if (!accession) { Alert.alert('No accession number', `Enter an accession number for ${testName} before printing.`); return; }
     setPrinting(true);
     try {
-      const html = await buildLabelsHtml([{ patientName: sel?.patient_name ?? 'Patient', testName: labelSubLine(sampleType, (sel as any)?.patient_age, (sel as any)?.patient_gender), accession }]);
+      const html = await buildLabelsHtml([{ patientName: sel?.patient_name ?? 'Patient', testName, ageSex: ageSexText((sel as any)?.patient_age, (sel as any)?.patient_gender), accession }]);
       await Print.printAsync({ html });
     } catch (e: any) {
       Alert.alert('Print failed', e.message ?? 'Could not generate the barcode label');
@@ -264,7 +266,8 @@ export default function FranchiseBills() {
       .filter((it) => it.accession_number)
       .map((it) => ({
         patientName: sel?.patient_name ?? 'Patient',
-        testName: labelSubLine((it as any).sample_type, (sel as any)?.patient_age, (sel as any)?.patient_gender),
+        testName: it.package_name || it.test_name,
+        ageSex: ageSexText((sel as any)?.patient_age, (sel as any)?.patient_gender),
         accession: it.accession_number as string,
       }));
     if (items.length === 0) { Alert.alert('Nothing to print', 'No accession numbers found on this bill.'); return; }
