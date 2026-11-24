@@ -60,7 +60,7 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
   const labelBlocks = withBarcodes.map((it) => `
     <div class="label">
       <div class="test">${escapeHtml(it.testName)}</div>
-      <div class="agesex">${escapeHtml(it.ageSex ?? '')}</div>
+      <div class="agesex">${it.patientName ? `<span class="pn">${escapeHtml(it.patientName)}</span>` : ''}${it.ageSex ? `<span class="ag">${escapeHtml(it.ageSex)}</span>` : ''}</div>
       <img class="barcode" src="${it.barcodeUri}" />
       <div class="code">${escapeHtml(it.accession)}</div>
     </div>
@@ -80,9 +80,12 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
         }
         .patient { font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
         .test { font-size: 12px; font-weight: 800; color: #000; margin-bottom: 1px; }
-        .agesex { font-size: 12px; font-weight: 800; color: #000; margin-bottom: 8px; }
+        .agesex { font-size: 12px; font-weight: 800; color: #000; margin-bottom: 8px;
+                  display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0 8px; }
+        .pn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+        .ag { white-space: nowrap; }
         .barcode { display: block; margin: 0 auto; width: 100%; height: 68px; }
-        .code { font-size: 12px; font-weight: 800; color: #000; margin-top: 4px; letter-spacing: 0.5px; }
+        .code { font-size: 15px; font-weight: 800; color: #000; margin-top: 4px; letter-spacing: 0.5px; }
       </style>
     </head>
     <body>
