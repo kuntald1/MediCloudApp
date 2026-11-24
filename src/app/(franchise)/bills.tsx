@@ -57,10 +57,10 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
           break-inside: avoid; page-break-inside: avoid;
         }
         .patient { font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
-        .test { font-size: 12px; font-weight: 600; color: #0F172A; margin-bottom: 1px; }
-        .agesex { font-size: 12px; color: #334155; margin-bottom: 8px; }
-        .barcode { display: block; margin: 0 auto; max-width: 90%; }
-        .code { font-size: 12px; font-weight: 800; color: #0F172A; margin-top: 4px; letter-spacing: 0.5px; }
+        .test { font-size: 12px; font-weight: 800; color: #000; margin-bottom: 1px; }
+        .agesex { font-size: 12px; font-weight: 800; color: #000; margin-bottom: 8px; }
+        .barcode { display: block; margin: 0 auto; width: 100%; height: 68px; }
+        .code { font-size: 12px; font-weight: 800; color: #000; margin-top: 4px; letter-spacing: 0.5px; }
       </style>
     </head>
     <body>
