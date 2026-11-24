@@ -2,6 +2,7 @@ import { authHeader, API_BASE, getToken } from '../../../src/utils/auth';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
+import { labelSubLine } from '../../components/labelText';
 import bwipjs from '@bwip-js/react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -37,7 +38,6 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
   })));
   const labelBlocks = withBarcodes.map((it) => `
     <div class="label">
-      <div class="patient">${escapeHtml(it.patientName)}</div>
       <div class="test">${escapeHtml(it.testName)}</div>
       <img class="barcode" src="${it.barcodeUri}" />
       <div class="code">${escapeHtml(it.accession)}</div>
@@ -56,9 +56,9 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
           break-inside: avoid; page-break-inside: avoid;
         }
         .patient { font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
-        .test { font-size: 12px; font-weight: 600; color: #17B9A1; margin-bottom: 10px; }
+        .test { font-size: 13px; font-weight: 600; color: #0F172A; margin-bottom: 8px; }
         .barcode { display: block; margin: 0 auto; max-width: 90%; }
-        .code { font-size: 11px; color: #0F172A; margin-top: 4px; letter-spacing: 0.5px; }
+        .code { font-size: 12px; font-weight: 800; color: #0F172A; margin-top: 4px; letter-spacing: 0.5px; }
       </style>
     </head>
     <body>
@@ -247,11 +247,11 @@ export default function FranchiseBills() {
   };
 
   // Print a single sample's barcode label
-  const printOneSample = async (accession: string, testName: string) => {
+  const printOneSample = async (accession: string, testName: string, sampleType?: string | null) => {
     if (!accession) { Alert.alert('No accession number', `Enter an accession number for ${testName} before printing.`); return; }
     setPrinting(true);
     try {
-      const html = await buildLabelsHtml([{ patientName: sel?.patient_name ?? 'Patient', testName, accession }]);
+      const html = await buildLabelsHtml([{ patientName: sel?.patient_name ?? 'Patient', testName: labelSubLine(sampleType, (sel as any)?.patient_age, (sel as any)?.patient_gender), accession }]);
       await Print.printAsync({ html });
     } catch (e: any) {
       Alert.alert('Print failed', e.message ?? 'Could not generate the barcode label');
@@ -264,7 +264,7 @@ export default function FranchiseBills() {
       .filter((it) => it.accession_number)
       .map((it) => ({
         patientName: sel?.patient_name ?? 'Patient',
-        testName: it.test_name,
+        testName: labelSubLine((it as any).sample_type, (sel as any)?.patient_age, (sel as any)?.patient_gender),
         accession: it.accession_number as string,
       }));
     if (items.length === 0) { Alert.alert('Nothing to print', 'No accession numbers found on this bill.'); return; }
@@ -484,7 +484,7 @@ export default function FranchiseBills() {
                                 <Text style={styles.accBadgeText}>{it.accession_number}{accLocked(it) ? '  🔒' : ''}</Text>
                               </View>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(it.accession_number as string, it.test_name)} disabled={printing}>
+                            <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(it.accession_number as string, it.test_name, (it as any).sample_type)} disabled={printing}>
                               <Text style={styles.printOneBtnIcon}>🖨</Text>
                             </TouchableOpacity>
                           </View>

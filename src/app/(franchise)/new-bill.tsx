@@ -9,11 +9,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
 import * as Print from 'expo-print';
+import { labelSubLine } from '../../components/labelText';
 import bwipjs from '@bwip-js/react-native';
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
-interface Patient   { id: number; barcode: string; patient_name: string; organization_id: number | null; phone: string | null; }
+interface Patient   { id: number; barcode: string; patient_name: string; organization_id: number | null; phone: string | null; age?: number | null; gender?: string | null; }
 interface Test      { id: number; name: string; price: number; mrp: number; sample_type: string; sample_tube_id?: number | null; }
 interface TestGroup { id: number; name: string; price: number; tests: { id: number; name: string }[]; test_ids?: number[]; }
 interface Org       { id: number; name: string; }
@@ -58,7 +59,6 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
 
   const labelBlocks = withBarcodes.map((it) => `
     <div class="label">
-      <div class="patient">${escapeHtml(it.patientName)}</div>
       <div class="test">${escapeHtml(it.testName)}</div>
       <img class="barcode" src="${it.barcodeUri}" />
       <div class="code">${escapeHtml(it.accession)}</div>
@@ -78,9 +78,9 @@ async function buildLabelsHtml(items: LabelItem[]): Promise<string> {
           break-inside: avoid; page-break-inside: avoid;
         }
         .patient { font-size: 15px; font-weight: 700; color: #0F172A; margin-bottom: 2px; }
-        .test { font-size: 12px; font-weight: 600; color: #17B9A1; margin-bottom: 10px; }
+        .test { font-size: 13px; font-weight: 600; color: #0F172A; margin-bottom: 8px; }
         .barcode { display: block; margin: 0 auto; max-width: 90%; }
-        .code { font-size: 11px; color: #0F172A; margin-top: 4px; letter-spacing: 0.5px; }
+        .code { font-size: 12px; font-weight: 800; color: #0F172A; margin-top: 4px; letter-spacing: 0.5px; }
       </style>
     </head>
     <body>
@@ -592,7 +592,7 @@ export default function NewBill() {
     try {
       const html = await buildLabelsHtml([{
         patientName: patient?.patient_name ?? 'Patient',
-        testName: (g.tube?.name ? `${g.tube.name} · ` : '') + g.names.join(', '),
+        testName: labelSubLine(g.tube?.name, patient?.age, patient?.gender),
         accession: code,
       }]);
       await Print.printAsync({ html });
@@ -608,7 +608,7 @@ export default function NewBill() {
       .filter(g => accessions[g.key])
       .map(g => ({
         patientName: patient?.patient_name ?? 'Patient',
-        testName: (g.tube?.name ? `${g.tube.name} · ` : '') + g.names.join(', '),
+        testName: labelSubLine(g.tube?.name, patient?.age, patient?.gender),
         accession: accessions[g.key],
       }));
     if (items.length === 0) { Alert.alert('Nothing to print', 'Add tests and wait for accession numbers to be generated first.'); return; }
