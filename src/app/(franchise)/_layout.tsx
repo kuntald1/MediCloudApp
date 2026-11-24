@@ -12,6 +12,7 @@ const FRANCHISE_MENUS = [
   { name: 'results',        title: 'Results',        icon: '📋' },
   { name: 'cost-estimate',  title: 'Cost Estimate',  icon: '🧮' },
   { name: 'new-bill',       title: 'New Bill',       icon: '🧾' },
+  { name: 'scan-to-computer', title: 'Scan to Computer', icon: '📱' },
   { name: 'bills',          title: 'Bills',          icon: '💳' },
   { name: 'manage-credit',  title: 'Manage Credit',  icon: '🏦' },
   { name: 'history-needed', title: 'History Needed', icon: '📜' },

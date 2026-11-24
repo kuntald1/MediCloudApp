@@ -10,6 +10,7 @@ const LAB_MENUS = [
   { name: 'dashboard',         title: 'Dashboard',           icon: '📊' },
   { name: 'patients',          title: 'Patients',            icon: '👥' },
   { name: 'change-status',     title: 'Change Report Status',       icon: '🔄' },
+  { name: 'scan-to-computer',  title: 'Scan to Computer',    icon: '📱' },
   { name: 'results',           title: 'Results',             icon: '📋' },
   { name: 'tat-report',        title: 'TAT Report',          icon: '⏱️' },
   { name: 'sample-tubes',      title: 'Sample Tubes',        icon: '🧪' },
