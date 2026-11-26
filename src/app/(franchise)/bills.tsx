@@ -5,7 +5,7 @@ import * as Print from 'expo-print';
 import { ageSexText } from '../../components/labelText';
 import bwipjs from '@bwip-js/react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import DepartmentFilter, { useDepartments, todayStr, billTests, BILL_TEST_STATUS_LABEL, BILL_TEST_STATUS_COLOR } from '../../components/DepartmentFilter';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet,
@@ -174,6 +174,48 @@ export default function FranchiseBills() {
     } finally {
       setAccessionSearching(false);
     }
+  };
+
+  // A patient's bills belong together: the bench works tube by tube, so bills
+  // sharing a barcode stay adjacent instead of being scattered by date. Groups
+  // are ordered by their newest bill, newest group first.
+  const ordered = useMemo(() => {
+    const when = (b: any) => new Date(b?.created_at ?? 0).getTime() || 0;
+    const groups = new Map<string, any[]>();
+    (bills ?? []).forEach((b: any) => {
+      const key = b.barcode || `bill:${b.id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(b);
+    });
+    return [...groups.values()]
+      .map(g => g.slice().sort((x, y) => when(y) - when(x) || (y.id - x.id)))
+      .sort((a, b) => when(b[0]) - when(a[0]) || (b[0].id - a[0].id))
+      .flat();
+  }, [bills]);
+
+  // Print Barcode — a sticker for every accession number in the list as shown,
+  // so one patient's tubes print together. The count is confirmed first,
+  // because a filtered list can hold a great many labels.
+  const printListBarcodes = () => {
+    const items: LabelItem[] = [];
+    ordered.forEach((b: any) => (b.items ?? []).forEach((it: any) => {
+      if (it.accession_number) items.push({
+        patientName: b.patient_name ?? 'Patient',
+        testName: it.package_name || it.test_name,
+        ageSex: ageSexText(b.patient_age, b.patient_gender),
+        accession: it.accession_number,
+      });
+    }));
+    if (items.length === 0) { Alert.alert('Nothing to print', 'No accession numbers in this list.'); return; }
+    Alert.alert('Print Barcode', `Print ${items.length} label(s)?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Print', onPress: async () => {
+          setPrinting(true);
+          try { await Print.printAsync({ html: await buildLabelsHtml(items) }); }
+          catch (e: any) { Alert.alert('Print failed', e.message ?? 'Could not generate the labels'); }
+          finally { setPrinting(false); }
+        } },
+    ]);
   };
 
   const openBill = (b: Bill) => { setSel(b); setWaPhone(b.phone ?? ''); setIncludeLink(true); };
@@ -408,10 +450,17 @@ export default function FranchiseBills() {
         )}
       </View>
 
-      {!loading && <Text style={styles.headerCount}>{bills.length} bill{bills.length !== 1 ? 's' : ''}</Text>}
+      {!loading && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginBottom: 8, marginTop: 6, gap: 10 }}>
+          <Text style={[styles.headerCount, { marginHorizontal: 0, marginBottom: 0, marginTop: 0 }]}>{ordered.length} bill{ordered.length !== 1 ? 's' : ''}</Text>
+          <TouchableOpacity style={styles.printListBtn} onPress={printListBarcodes} disabled={printing || ordered.length === 0}>
+            <Text style={styles.printListText}>{printing ? '…' : '🖨  Print Barcode'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {loading ? <ActivityIndicator color="#F97316" size="large" style={{ marginTop: 48 }} /> : (
-        <FlatList data={bills} keyExtractor={b => b.id.toString()} renderItem={renderItem}
+        <FlatList data={ordered} keyExtractor={b => b.id.toString()} renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: 32 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F97316" />}
           ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyIcon}>💳</Text><Text style={styles.emptyText}>No bills found</Text></View>}
@@ -565,6 +614,8 @@ const styles = StyleSheet.create({
   clearBtn:       { paddingHorizontal: 16, justifyContent: 'center' },
   clearBtnText:   { color: '#EF4444', fontSize: 13, fontWeight: '600' },
   headerCount:    { color: '#64748B', fontSize: 12, marginHorizontal: 12, marginBottom: 8, marginTop: 6 },
+  printListBtn:   { backgroundColor: '#F9731615', borderWidth: 1, borderColor: '#F9731655', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  printListText:  { color: '#F97316', fontSize: 11.5, fontWeight: '700' },
   card:           { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   cardTop:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   billNo:         { color: '#0F172A', fontSize: 15, fontWeight: 'bold' },

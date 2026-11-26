@@ -7,7 +7,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Print from 'expo-print';
 import { ageSexText } from '../../components/labelText';
 import bwipjs from '@bwip-js/react-native';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, Modal, ScrollView, Alert,
@@ -152,6 +152,48 @@ export default function Bills() {
     b.bill_no?.toLowerCase().includes(search.toLowerCase()) ||
     b.barcode?.toLowerCase().includes(search.toLowerCase())
   );
+
+  // A patient's bills belong together: the bench works tube by tube, so bills
+  // sharing a barcode stay adjacent instead of being scattered by date. Groups
+  // are ordered by their newest bill, newest group first.
+  const ordered = useMemo(() => {
+    const when = (b: any) => new Date(b?.created_at ?? 0).getTime() || 0;
+    const groups = new Map<string, any[]>();
+    (filtered ?? []).forEach((b: any) => {
+      const key = b.barcode || `bill:${b.id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(b);
+    });
+    return [...groups.values()]
+      .map(g => g.slice().sort((x, y) => when(y) - when(x) || (y.id - x.id)))
+      .sort((a, b) => when(b[0]) - when(a[0]) || (b[0].id - a[0].id))
+      .flat();
+  }, [filtered]);
+
+  // Print Barcode — a sticker for every accession number in the list as shown,
+  // so one patient's tubes print together. The count is confirmed first,
+  // because a filtered list can hold a great many labels.
+  const printListBarcodes = () => {
+    const items: LabelItem[] = [];
+    ordered.forEach((b: any) => (b.items ?? []).forEach((it: any) => {
+      if (it.accession_number) items.push({
+        patientName: b.patient_name ?? 'Patient',
+        testName: it.package_name || it.test_name,
+        ageSex: ageSexText(b.patient_age, b.patient_gender),
+        accession: it.accession_number,
+      });
+    }));
+    if (items.length === 0) { Alert.alert('Nothing to print', 'No accession numbers in this list.'); return; }
+    Alert.alert('Print Barcode', `Print ${items.length} label(s)?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Print', onPress: async () => {
+          setPrinting(true);
+          try { await Print.printAsync({ html: await buildLabelsHtml(items) }); }
+          catch (e: any) { Alert.alert('Print failed', e.message ?? 'Could not generate the labels'); }
+          finally { setPrinting(false); }
+        } },
+    ]);
+  };
 
   // Open detail — fetch full bill (items + payments)
   const openBill = async (b: Bill) => {
@@ -513,9 +555,14 @@ export default function Bills() {
         <TextInput style={[styles.filterBtn, { flex: 1, color: '#0F172A', fontSize: 12, paddingVertical: 6 }]} value={toDate} onChangeText={setToDate}
           placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
       </View>
-      <Text style={styles.count}>{filtered.length} bill{filtered.length !== 1 ? 's' : ''}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, marginBottom: 4, gap: 10 }}>
+        <Text style={[styles.count, { paddingHorizontal: 0, marginBottom: 0 }]}>{ordered.length} bill{ordered.length !== 1 ? 's' : ''}</Text>
+        <TouchableOpacity style={styles.printListBtn} onPress={printListBarcodes} disabled={printing || ordered.length === 0}>
+          <Text style={styles.printListText}>{printing ? '…' : '🖨  Print Barcode'}</Text>
+        </TouchableOpacity>
+      </View>
       {loading ? <ActivityIndicator color="#17B9A1" size="large" style={{ marginTop: 48 }} /> : (
-        <FlatList data={filtered} keyExtractor={(b, i) => (b.id ?? i).toString()} renderItem={renderItem}
+        <FlatList data={ordered} keyExtractor={(b, i) => (b.id ?? i).toString()} renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: 32 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#17B9A1" />}
           ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyIcon}>🧾</Text><Text style={styles.emptyText}>No bills found</Text></View>}
@@ -813,6 +860,8 @@ const styles = StyleSheet.create({
   stageBtnActive:  { backgroundColor: '#6366F1', borderColor: '#6366F1' },
   filterText:      { color: '#94A3B8', fontSize: 11, fontWeight: '600' },
   count:           { color: '#475569', fontSize: 12, paddingHorizontal: 12, marginBottom: 4 },
+  printListBtn:   { backgroundColor: '#17B9A115', borderWidth: 1, borderColor: '#17B9A155', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  printListText:  { color: '#17B9A1', fontSize: 11.5, fontWeight: '700' },
   card:            { backgroundColor: '#FFFFFF', marginHorizontal: 12, marginBottom: 10, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   cardCancelled:   { opacity: 0.55 },
   cardRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },

@@ -10,6 +10,7 @@ import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
 import * as Print from 'expo-print';
 import { ageSexText } from '../../components/labelText';
+import { scanBridge } from '../../scanBridge';
 import bwipjs from '@bwip-js/react-native';
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -588,6 +589,36 @@ export default function NewBill() {
     setAccessions({}); setEffectivePrices({}); setTouchedAccessionIds(new Set());
   };
 
+
+  // ── Scan a pre-printed tube label straight into its accession box.
+  // The camera is its own full-screen route and hands the code back through
+  // scanBridge once this screen is focused again, so the tube that asked for
+  // the scan is remembered in a ref rather than in state (state would be stale
+  // by the time the subscription fires).
+  const scanTargetRef = useRef<string | null>(null);
+  const [scanningFor, setScanningFor] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => scanBridge.subscribe((scanned) => {
+      const key = scanTargetRef.current;
+      scanTargetRef.current = null;
+      setScanningFor(null);
+      const code = (scanned ?? '').trim().toUpperCase();
+      if (!key || !code) return;
+      setAccessions(prev => ({ ...prev, [key]: code }));
+      // mark it hand-set, so the auto-numbering never writes over the sticker
+      // the tube is actually wearing
+      setTouchedAccessionIds(prev => new Set(prev).add(key));
+    }), [])
+  );
+
+  const scanIntoSample = (key: string) => {
+    scanTargetRef.current = key;
+    setScanningFor(key);
+    scanBridge.clear();      // drop anything left from an abandoned scan
+    router.push('/scan-camera' as any);
+  };
+
   // Print a single tube's barcode label
   const printOneSample = async (g: { key: string; tube: Tube | null; names: string[] }) => {
     const code = accessions[g.key];
@@ -872,6 +903,10 @@ export default function NewBill() {
                             placeholder="Accession no." placeholderTextColor="#94A3B8"
                             autoCapitalize="characters"
                           />
+                          <TouchableOpacity style={[styles.printOneBtn, scanningFor === g.key && styles.scanOneBtnOn]}
+                            onPress={() => scanIntoSample(g.key)}>
+                            <Text style={styles.printOneBtnIcon}>📷</Text>
+                          </TouchableOpacity>
                           <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(g)} disabled={printing}>
                             <Text style={styles.printOneBtnIcon}>🖨</Text>
                           </TouchableOpacity>
@@ -1176,6 +1211,7 @@ const styles = StyleSheet.create({
   accRow:          { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   accInputCompact: { flex: 1, maxWidth: 160, backgroundColor: '#F8FAFC', color: '#0F172A', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, fontSize: 12, fontWeight: '700', borderWidth: 1, borderColor: '#17B9A155' },
   printOneBtn:     { width: 30, height: 30, borderRadius: 8, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center' },
+  scanOneBtnOn:    { backgroundColor: '#17B9A115', borderColor: '#17B9A1' },
   printOneBtnIcon: { fontSize: 13 },
 
   billGroupBlock: { borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingBottom: 10, marginBottom: 10 },

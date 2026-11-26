@@ -541,11 +541,17 @@ export default function Results() {
           const c = TEST_STATUS_COLOR[t.status] ?? '#94A3B8';
           const tf = t.results.find((r: Result) => !(r as any).locked) || t.results[0];
           const edited = t.results.find((r: Result) => r.edited)?.edited;
+          // the row whose report is open — tinted and labelled, so it is never a
+          // guess which test the panel below belongs to
+          const tOpen = t.results.some((r: Result) => sel && r.id === sel.id);
           return (
             <TouchableOpacity key={t.key} activeOpacity={0.7} onPress={() => openDetail(tf)}
-              style={[styles.tRow, ti > 0 && { borderTopWidth: 1, borderTopColor: '#F1F5F9' }, t.results.some((r: Result) => sel && r.id === sel.id) && { backgroundColor: '#FFFBF7' }]}>
+              style={[styles.tRow, ti > 0 && { borderTopWidth: 1, borderTopColor: '#F1F5F9' }, tOpen && styles.tRowOn]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.tName}>{t.name || 'Test'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Text style={[styles.tName, tOpen && styles.tNameOn]}>{t.name || 'Test'}</Text>
+                  {tOpen ? <View style={styles.viewingPill}><Text style={styles.viewingText}>VIEWING</Text></View> : null}
+                </View>
                 {t.accession ? <Text style={styles.tAcc}>{t.accession}</Text> : null}
                 {t.department ? <Text style={styles.tDept}>{t.department}</Text> : null}
               </View>
@@ -1023,8 +1029,13 @@ const styles = StyleSheet.create({
   gCode:          { color: '#F97316', fontWeight: '700', fontSize: 12, marginTop: 1 },
   gTime:          { color: '#94A3B8', fontSize: 10.5 },
   gCount:         { color: '#475569', fontSize: 10, fontWeight: '800', marginTop: 2 },
-  tRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
+  tRow:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11,
+                    borderLeftWidth: 4, borderLeftColor: 'transparent' },
+  tRowOn:         { backgroundColor: 'rgba(249,115,22,0.13)', borderLeftColor: '#F97316' },
   tName:          { color: '#0F172A', fontSize: 13.5, fontWeight: '700' },
+  tNameOn:        { color: '#9A3412', fontWeight: '800' },
+  viewingPill:    { backgroundColor: '#F97316', borderRadius: 20, paddingHorizontal: 7, paddingVertical: 1 },
+  viewingText:    { color: '#FFFFFF', fontSize: 8.5, fontWeight: '800', letterSpacing: 0.6 },
   tAcc:           { color: '#C2410C', fontSize: 11, fontWeight: '700', marginTop: 2 },
   tDept:          { color: '#0E7490', fontSize: 10.5, fontWeight: '700', marginTop: 2 },
   panelTitle:     { color: '#0F172A', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', borderBottomWidth: 2, borderBottomColor: '#0F172A', paddingBottom: 3, marginBottom: 2, marginTop: 6 },
