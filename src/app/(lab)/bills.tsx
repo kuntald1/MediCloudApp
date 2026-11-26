@@ -177,19 +177,34 @@ export default function Bills() {
       .flat();
   }, [filtered]);
 
+  // One accession number is one physical tube, so tests drawn into the same
+  // tube belong on ONE sticker carrying their names together — the way New
+  // Bill makes labels. Per item instead would print the same barcode twice.
+  const tubeLabels = (bill: any): LabelItem[] => {
+    const byAcc = new Map<string, { base: LabelItem; names: string[] }>();
+    (bill?.items ?? []).forEach((it: any) => {
+      const acc = it.accession_number;
+      if (!acc) return;
+      if (!byAcc.has(acc)) byAcc.set(acc, {
+        base: {
+          patientName: bill?.patient_name ?? 'Patient',
+          testName: '',
+          ageSex: ageSexText(bill?.patient_age, bill?.patient_gender),
+          accession: acc,
+        },
+        names: [],
+      });
+      byAcc.get(acc)!.names.push(it.package_name || it.test_name);
+    });
+    return [...byAcc.values()].map(g => ({ ...g.base, testName: g.names.filter(Boolean).join(', ') }));
+  };
+
   // Print Barcode — a sticker for every accession number in the list as shown,
   // so one patient's tubes print together. The count is confirmed first,
   // because a filtered list can hold a great many labels.
   const printListBarcodes = () => {
     const items: LabelItem[] = [];
-    ordered.forEach((b: any) => (b.items ?? []).forEach((it: any) => {
-      if (it.accession_number) items.push({
-        patientName: b.patient_name ?? 'Patient',
-        testName: it.package_name || it.test_name,
-        ageSex: ageSexText(b.patient_age, b.patient_gender),
-        accession: it.accession_number,
-      });
-    }));
+    ordered.forEach((b: any) => items.push(...tubeLabels(b)));
     if (items.length === 0) { Alert.alert('Nothing to print', 'No accession numbers in this list.'); return; }
     Alert.alert('Print Barcode', `Print ${items.length} label(s)?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -482,7 +497,10 @@ export default function Bills() {
     if (!accession) { Alert.alert('No accession number', `Enter an accession number for ${testName} before printing.`); return; }
     setPrinting(true);
     try {
-      const html = await buildLabelsHtml([{ patientName: sel?.patient_name ?? 'Patient', testName, ageSex: ageSexText((sel as any)?.patient_age, (sel as any)?.patient_gender), accession }]);
+      // the tube's own sticker: every test in this tube is named on it
+      const label = tubeLabels(sel).find(l => l.accession === accession)
+        ?? { patientName: sel?.patient_name ?? 'Patient', testName, ageSex: ageSexText((sel as any)?.patient_age, (sel as any)?.patient_gender), accession };
+      const html = await buildLabelsHtml([label]);
       await Print.printAsync({ html });
     } catch (e: any) {
       Alert.alert('Print failed', e.message ?? 'Could not generate the barcode label');
@@ -491,14 +509,7 @@ export default function Bills() {
 
   // Print every sample label on this bill in one go
   const printAllSamples = async () => {
-    const items: LabelItem[] = (sel?.items ?? [])
-      .filter((it: any) => it.accession_number)
-      .map((it: any) => ({
-        patientName: sel?.patient_name ?? 'Patient',
-        testName: it.package_name || it.test_name,
-        ageSex: ageSexText((sel as any)?.patient_age, (sel as any)?.patient_gender),
-        accession: it.accession_number,
-      }));
+    const items: LabelItem[] = tubeLabels(sel);
     if (items.length === 0) { Alert.alert('Nothing to print', 'No accession numbers found on this bill.'); return; }
     setPrinting(true);
     try {
