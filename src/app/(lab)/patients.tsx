@@ -768,7 +768,8 @@ export default function Patients() {
                 </>
               )}
             </View>
-            <View style={{ height: 40 }} />
+            {/* clears the phone's navigation bar below Register Only / Register & Bill */}
+            <View style={{ height: 72 }} />
           </ScrollView>
         </KeyboardAvoidingView>
 

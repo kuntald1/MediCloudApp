@@ -638,7 +638,8 @@ const styles = StyleSheet.create({
   emptyIcon:      { fontSize: 48 },
   emptyText:      { color: '#475569', fontSize: 16, marginTop: 12 },
   overlay:        { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  modalBox:       { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 28 },
+  // paddingBottom clears the phone's navigation bar at the foot of the sheet
+  modalBox:       { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 56 },
   modalTitle:     { color: '#0F172A', fontSize: 18, fontWeight: 'bold' },
   modalSub:       { color: '#64748B', fontSize: 12, marginTop: 3 },
   orgLink:        { color: '#6366F1', fontSize: 12, marginTop: 3, fontWeight: '600' },

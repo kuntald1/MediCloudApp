@@ -1,6 +1,10 @@
 import { authHeader, API_BASE } from '../../../src/utils/auth';
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, FlatList } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, FlatList, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 import { router, useFocusEffect } from 'expo-router';
 import { scanBridge } from '../../scanBridge';
 import DepartmentFilter, { useDepartments, todayStr } from '../../components/DepartmentFilter';
@@ -28,6 +32,8 @@ export default function ChangeStatus() {
   const [accession, setAccession] = useState('');
   const [fromDate, setFromDate]   = useState(todayStr());   // opens on today's samples
   const [toDate, setToDate]       = useState(todayStr());
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker]     = useState(false);
   const [orgPick, setOrgPick]     = useState('');
   const [deptPick, setDeptPick]   = useState('');
   const [orgs, setOrgs]           = useState<{ id: number; name: string }[]>([]);
@@ -188,13 +194,15 @@ export default function ChangeStatus() {
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>From</Text>
-                <TextInput style={styles.fieldInput} value={fromDate} onChangeText={setFromDate}
-                  placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
+                <TouchableOpacity style={styles.fieldInput} onPress={() => setShowFromPicker(true)}>
+                  <Text style={{ color: fromDate ? '#0F172A' : '#94A3B8', fontSize: 13 }}>📅  {fromDate || 'Any'}</Text>
+                </TouchableOpacity>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.fieldLabel}>To</Text>
-                <TextInput style={styles.fieldInput} value={toDate} onChangeText={setToDate}
-                  placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
+                <TouchableOpacity style={styles.fieldInput} onPress={() => setShowToPicker(true)}>
+                  <Text style={{ color: toDate ? '#0F172A' : '#94A3B8', fontSize: 13 }}>📅  {toDate || 'Any'}</Text>
+                </TouchableOpacity>
               </View>
             </View>
             {orgs.length > 0 && (
@@ -324,6 +332,19 @@ export default function ChangeStatus() {
             }
           />
         </>
+      )}
+
+      {/* Date filters open the phone's own calendar — the same picker the
+          Franchise and Results screens already use, so every date behaves alike. */}
+      {showFromPicker && (
+        <DateTimePicker value={fromDate ? new Date(fromDate) : new Date()} mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(e, d) => { setShowFromPicker(false); if (d) setFromDate(toYMD(d)); }} />
+      )}
+      {showToPicker && (
+        <DateTimePicker value={toDate ? new Date(toDate) : new Date()} mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(e, d) => { setShowToPicker(false); if (d) setToDate(toYMD(d)); }} />
       )}
     </View>
   );

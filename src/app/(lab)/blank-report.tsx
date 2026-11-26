@@ -10,9 +10,13 @@
 import { API_BASE, authHeader, getUser } from '../../../src/utils/auth';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Modal, RefreshControl, ScrollView, StyleSheet,
+  ActivityIndicator, Alert, Modal, Platform, RefreshControl, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 import TestFilter, { splitTestFilter, useTestOptions } from '../../components/TestFilter';
 import ResultEditor from '../../components/ResultEditor';
 
@@ -34,6 +38,8 @@ export default function BlankReport() {
   const [patientName, setPatientName] = useState('');
   const [fromDate, setFromDate]       = useState('');
   const [toDate, setToDate]           = useState('');
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker]     = useState(false);
   const [stage, setStage]             = useState('received');   // tests still waiting for a result
   const [testPick, setTestPick]       = useState('');
   const testOptions                   = useTestOptions();
@@ -162,10 +168,12 @@ export default function BlankReport() {
           </TouchableOpacity>
         </View>
         <View style={styles.filterBar}>
-          <TextInput style={[styles.filterInput, { flex: 1 }]} value={fromDate} onChangeText={setFromDate}
-            placeholder="From  YYYY-MM-DD" placeholderTextColor="#94A3B8" />
-          <TextInput style={[styles.filterInput, { flex: 1 }]} value={toDate} onChangeText={setToDate}
-            placeholder="To  YYYY-MM-DD" placeholderTextColor="#94A3B8" />
+          <TouchableOpacity style={[styles.filterInput, { flex: 1 }]} onPress={() => setShowFromPicker(true)}>
+            <Text style={{ color: fromDate ? '#0F172A' : '#94A3B8', fontSize: 13 }}>📅  {fromDate || 'From'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.filterInput, { flex: 1 }]} onPress={() => setShowToPicker(true)}>
+            <Text style={{ color: toDate ? '#0F172A' : '#94A3B8', fontSize: 13 }}>📅  {toDate || 'To'}</Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.filterBar}>
           <View style={{ flex: 1 }}>
@@ -272,6 +280,19 @@ export default function BlankReport() {
           </View>
         </View>
       </Modal>
+
+      {/* Date filters open the phone's own calendar — the same picker the
+          Franchise and Results screens already use, so every date behaves alike. */}
+      {showFromPicker && (
+        <DateTimePicker value={fromDate ? new Date(fromDate) : new Date()} mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(e, d) => { setShowFromPicker(false); if (d) setFromDate(toYMD(d)); }} />
+      )}
+      {showToPicker && (
+        <DateTimePicker value={toDate ? new Date(toDate) : new Date()} mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(e, d) => { setShowToPicker(false); if (d) setToDate(toYMD(d)); }} />
+      )}
     </View>
   );
 }

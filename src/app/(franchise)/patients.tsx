@@ -688,7 +688,8 @@ export default function FranchisePatients() {
                 </TouchableOpacity>
               </View>
             )}
-            <View style={{ height: 40 }} />
+            {/* clears the phone's navigation bar below the register buttons */}
+            <View style={{ height: 72 }} />
           </ScrollView>
         </KeyboardAvoidingView>
 

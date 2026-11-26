@@ -6,14 +6,19 @@ import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
 import * as Print from 'expo-print';
 import { ageSexText } from '../../components/labelText';
+import { router, useFocusEffect } from 'expo-router';
+import { scanBridge } from '../../scanBridge';
 import bwipjs from '@bwip-js/react-native';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, Modal, ScrollView, Alert,
+  ActivityIndicator, RefreshControl, Modal, ScrollView, Alert, Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const inr = (n: number) => '₹' + (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const toYMD = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const STATUS_COLOR: Record<string, string> = { unpaid: '#EF4444', partial: '#F59E0B', paid: '#10B981', credit: '#8B5CF6', cancelled: '#64748B' };
 // a bill can only be cancelled while every test is still at one of these stages
 
@@ -106,6 +111,8 @@ export default function Bills() {
   const [deptPick, setDeptPick]   = useState('');   // department id
   const [fromDate, setFromDate]   = useState(todayStr());   // opens on today's bills
   const [toDate, setToDate]       = useState(todayStr());
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker]     = useState(false);
   const depts                   = useDepartments();
 
   // Detail modal
@@ -387,6 +394,60 @@ export default function Bills() {
     setEditValue(it.accession_number ?? '');
   };
 
+  // ── Scan a tube label to replace an accession number.
+  //
+  // The camera is a separate full-screen route, and this screen's bill sheet
+  // is a Modal that would otherwise sit on top of it — so the sheet is hidden
+  // for the trip and brought back when focus returns, with `sel` untouched so
+  // the same bill is still open underneath.
+  const scanItemRef = useRef<any>(null);
+  const [scanHidden, setScanHidden] = useState(false);
+
+  const applyScannedAccession = async (it: any, code: string) => {
+    const clash = sel?.items?.find(x => x.id !== it.id && (x.accession_number ?? '').toUpperCase() === code);
+    if (clash) { Alert.alert('Duplicate accession number', `'${code}' is already in use by another test on this bill`); return; }
+    setSavingAccession(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/billing/bills/${sel!.id}/items/${it.id}/accession`, {
+        method: 'PUT',
+        headers: { ...authHeader(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accession_number: code }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail ?? 'Could not update accession number');
+      setSel(data);
+      fetchBills();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally { setSavingAccession(false); }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      const off = scanBridge.subscribe((scanned) => {
+        const it = scanItemRef.current;
+        scanItemRef.current = null;
+        const code = (scanned ?? '').trim().toUpperCase();
+        if (!it || !code) return;
+        // a scan writes to the bill straight away, so it is read back first
+        Alert.alert('Change accession number',
+          `${it.test_name}\n\n${it.accession_number ?? '—'}  →  ${code}`,
+          [{ text: 'Cancel', style: 'cancel' },
+           { text: 'Change', onPress: () => applyScannedAccession(it, code) }]);
+      });
+      setScanHidden(false);   // back from the camera, or it was cancelled
+      return off;
+    }, [sel])   // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const scanIntoAccession = (it: any) => {
+    if (accLocked(it)) { Alert.alert('Locked', 'Accession number is locked — the sample is already received or has a result. Ask a lab admin to change it.'); return; }
+    scanItemRef.current = it;
+    setScanHidden(true);
+    scanBridge.clear();
+    router.push('/scan-camera' as any);
+  };
+
   const saveAccession = async (it: any) => {
     const code = editValue.trim().toUpperCase();
     if (!code) { Alert.alert('Error', 'Accession number cannot be empty'); return; }
@@ -549,11 +610,13 @@ export default function Bills() {
       </View>
       <View style={[styles.filterRow, { paddingTop: 0, alignItems: 'center' }]}>
         <Text style={styles.stageLabel}>From</Text>
-        <TextInput style={[styles.filterBtn, { flex: 1, color: '#0F172A', fontSize: 12, paddingVertical: 6 }]} value={fromDate} onChangeText={setFromDate}
-          placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
+        <TouchableOpacity style={[styles.filterBtn, { flex: 1, paddingVertical: 8 }]} onPress={() => setShowFromPicker(true)}>
+          <Text style={{ color: fromDate ? '#0F172A' : '#94A3B8', fontSize: 12 }}>📅  {fromDate || 'Any'}</Text>
+        </TouchableOpacity>
         <Text style={styles.stageLabel}>To</Text>
-        <TextInput style={[styles.filterBtn, { flex: 1, color: '#0F172A', fontSize: 12, paddingVertical: 6 }]} value={toDate} onChangeText={setToDate}
-          placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" maxLength={10} />
+        <TouchableOpacity style={[styles.filterBtn, { flex: 1, paddingVertical: 8 }]} onPress={() => setShowToPicker(true)}>
+          <Text style={{ color: toDate ? '#0F172A' : '#94A3B8', fontSize: 12 }}>📅  {toDate || 'Any'}</Text>
+        </TouchableOpacity>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, marginBottom: 4, gap: 10 }}>
         <Text style={[styles.count, { paddingHorizontal: 0, marginBottom: 0 }]}>{ordered.length} bill{ordered.length !== 1 ? 's' : ''}</Text>
@@ -570,7 +633,7 @@ export default function Bills() {
       )}
 
       {/* ── BILL DETAIL MODAL ── */}
-      <Modal visible={!!sel} transparent animationType="slide" onRequestClose={closeDetail}>
+      <Modal visible={!!sel && !scanHidden} transparent animationType="slide" onRequestClose={closeDetail}>
         <View style={styles.overlay}>
           <View style={styles.modalBox}>
             {/* Header */}
@@ -632,6 +695,9 @@ export default function Bills() {
                                 <View style={styles.accBadge}>
                                   <Text style={styles.accBadgeText}>{it.accession_number}{accLocked(it) ? '  🔒' : ''}</Text>
                                 </View>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.printOneBtn} onPress={() => scanIntoAccession(it)} disabled={savingAccession}>
+                                <Text style={styles.printOneBtnIcon}>📷</Text>
                               </TouchableOpacity>
                               <TouchableOpacity style={styles.printOneBtn} onPress={() => printOneSample(it.accession_number, it.test_name, (it as any).sample_type)} disabled={printing}>
                                 <Text style={styles.printOneBtnIcon}>🖨</Text>
@@ -839,6 +905,19 @@ export default function Bills() {
           </View>
         </Modal>
       </Modal>
+
+      {/* Date filters open the phone's own calendar — the same picker the
+          Franchise and Results screens already use, so every date behaves alike. */}
+      {showFromPicker && (
+        <DateTimePicker value={fromDate ? new Date(fromDate) : new Date()} mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(e, d) => { setShowFromPicker(false); if (d) setFromDate(toYMD(d)); }} />
+      )}
+      {showToPicker && (
+        <DateTimePicker value={toDate ? new Date(toDate) : new Date()} mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(e, d) => { setShowToPicker(false); if (d) setToDate(toYMD(d)); }} />
+      )}
     </View>
   );
 }
@@ -895,7 +974,9 @@ const styles = StyleSheet.create({
   emptyIcon:       { fontSize: 48 },
   emptyText:       { color: '#475569', fontSize: 16, marginTop: 12 },
   overlay:         { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  modalBox:        { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
+  // paddingBottom clears the phone's navigation bar, which otherwise covers
+  // the last row of the sheet (Cancel this bill)
+  modalBox:        { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 56 },
   modalHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   modalBillNo:     { color: '#0F172A', fontSize: 20, fontWeight: 'bold' },
   modalSub:        { color: '#94A3B8', fontSize: 13, marginTop: 2 },
