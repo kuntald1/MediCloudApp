@@ -180,21 +180,26 @@ export default function Bills() {
   // One accession number is one physical tube, so tests drawn into the same
   // tube belong on ONE sticker carrying their names together — the way New
   // Bill makes labels. Per item instead would print the same barcode twice.
+  const accKey = (v: any) => String(v ?? '').trim().toUpperCase();
+
   const tubeLabels = (bill: any): LabelItem[] => {
     const byAcc = new Map<string, { base: LabelItem; names: string[] }>();
     (bill?.items ?? []).forEach((it: any) => {
-      const acc = it.accession_number;
-      if (!acc) return;
-      if (!byAcc.has(acc)) byAcc.set(acc, {
+      // matched on the trimmed, upper-cased number: a stray space or a
+      // different case is still the same tube, and on screen the two look
+      // identical, so raw matching would quietly print the sticker twice
+      const key = accKey(it.accession_number);
+      if (!key) return;
+      if (!byAcc.has(key)) byAcc.set(key, {
         base: {
           patientName: bill?.patient_name ?? 'Patient',
           testName: '',
           ageSex: ageSexText(bill?.patient_age, bill?.patient_gender),
-          accession: acc,
+          accession: String(it.accession_number).trim(),
         },
         names: [],
       });
-      byAcc.get(acc)!.names.push(it.package_name || it.test_name);
+      byAcc.get(key)!.names.push(it.package_name || it.test_name);
     });
     return [...byAcc.values()].map(g => ({ ...g.base, testName: g.names.filter(Boolean).join(', ') }));
   };
@@ -498,7 +503,7 @@ export default function Bills() {
     setPrinting(true);
     try {
       // the tube's own sticker: every test in this tube is named on it
-      const label = tubeLabels(sel).find(l => l.accession === accession)
+      const label = tubeLabels(sel).find(l => accKey(l.accession) === accKey(accession))
         ?? { patientName: sel?.patient_name ?? 'Patient', testName, ageSex: ageSexText((sel as any)?.patient_age, (sel as any)?.patient_gender), accession };
       const html = await buildLabelsHtml([label]);
       await Print.printAsync({ html });
