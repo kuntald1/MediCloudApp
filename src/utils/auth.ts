@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 let _token: string = '';
 let _user: any     = null;
 
-export const API_BASE = 'https://medicloud.mooo.com';
+export const API_BASE = 'https://healthycianlab.com';
 
 const TOKEN_KEY = 'medicloud_token';
 const USER_KEY  = 'medicloud_user';
